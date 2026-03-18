@@ -2,7 +2,7 @@
 
 > **Fair allocation for high-demand inventory. Stop the chaos, start selling smart.**
 
-FairQueue is an open-source SaaS platform that helps event organizers, merchants, and service providers fairly allocate limited inventory during high-demand scenarios. Built to handle traffic spikes, prevent overselling, and ensure equitable access through intelligent queue management.
+FairQueue is an SaaS platform that helps event organizers, merchants, and service providers fairly allocate limited inventory during high-demand scenarios. Built to handle traffic spikes, prevent overselling, and ensure equitable access through intelligent queue management.
 
 ---
 
@@ -297,29 +297,6 @@ curl -X POST http://localhost:8000/api/events \
 
 ---
 
-## 🤝 Contributing
-
-We welcome contributions! FairQueue is built for learning and collaboration.
-
-**How to contribute:**
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/amazing-feature`
-3. Make your changes
-4. Write tests
-5. Commit: `git commit -m 'Add amazing feature'`
-6. Push: `git push origin feature/amazing-feature`
-7. Open a Pull Request
-
-**Areas we need help:**
-- 🐛 Bug fixes and testing
-- 📚 Documentation improvements
-- 🌍 Internationalization (i18n)
-- 🎨 UI/UX enhancements
-- 🔧 Performance optimizations
-- 📱 Mobile app development
-
----
-
 ## 📜 License
 
 MIT License - see [LICENSE](LICENSE) for details.
@@ -350,18 +327,6 @@ MIT License - see [LICENSE](LICENSE) for details.
 - **Discussions:** [Ask questions, share ideas](https://github.com/yourusername/fairqueue/discussions)
 - **Twitter:** [@fairqueue](https://twitter.com/fairqueue) (coming soon)
 - **Email:** hello@fairqueue.io (for business inquiries)
-
----
-
-## 🌟 Why Open Source?
-
-FairQueue is open source because:
-
-1. **Education first:** This solves a real problem while teaching system design
-2. **Transparency builds trust:** Users can verify fairness claims
-3. **Community improvement:** Better solutions emerge from collaboration
-4. **Local adaptation:** Nigerian developers can customize for local needs
-5. **Giving back:** Standing on the shoulders of giants (FastAPI, Redis, etc.)
 
 ---
 
