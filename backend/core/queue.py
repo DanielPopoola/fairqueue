@@ -1,21 +1,22 @@
+from datetime import UTC, datetime
+
 from redis.asyncio import Redis
-from datetime import datetime, UTC
 
 
 class QueueService:
-    def __init__(self, redis: Redis):
-        self.redis = redis
+	def __init__(self, redis: Redis):
+		self.redis = redis
 
-    async def join_queue(self, event_id: int, user_id: int) -> int:
-        key = f"queue:event:{event_id}"
-        score = int(datetime.now(UTC).timestamp() * 1000)
-        await self.redis.zadd(key, {user_id: score})
-        position = await self.redis.zrank(key, user_id)
-        return position + 1
-    
-    async def admit_next(self, event_id: int, count: int) -> list[str]:
-        key = f"queue:event:{event_id}"
-        lua_script = """
+	async def join_queue(self, event_id: int, user_id: int) -> int:
+		key = f'queue:event:{event_id}'
+		score = int(datetime.now(UTC).timestamp() * 1000)
+		await self.redis.zadd(key, {user_id: score})
+		position = await self.redis.zrank(key, user_id)
+		return position + 1
+
+	async def admit_next(self, event_id: int, count: int) -> list[str]:
+		key = f'queue:event:{event_id}'
+		lua_script = """
         local key = KEYS[1]
         local count = tonumber(ARGV[1])
         local users = redis.call('ZRANGE', key, 0, count - 1)
@@ -24,5 +25,5 @@ class QueueService:
         end
         return users
         """
-        result = await self.redis.eval(lua_script, 1, key, count)
-        return [user.decode("utf-8") for user in result]
+		result = await self.redis.eval(lua_script, 1, key, count)
+		return [user.decode('utf-8') for user in result]

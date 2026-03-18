@@ -1,17 +1,16 @@
-from logging.config import fileConfig
-from dotenv import load_dotenv
 import os
 import sys
+from logging.config import fileConfig
 from pathlib import Path
+
+from dotenv import load_dotenv
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from database import Base
-
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
+from sqlalchemy import engine_from_config, pool
 
 from alembic import context
+from database import Base
 
 load_dotenv()
 
@@ -31,9 +30,6 @@ if not database_url:
 
 config.set_main_option('sqlalchemy.url', database_url)
 
-
-from database import Base
-from models import User, Claim, Event, InventoryItem, QueueEntry
 
 target_metadata = Base.metadata
 

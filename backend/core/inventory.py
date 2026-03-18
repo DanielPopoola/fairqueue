@@ -1,18 +1,18 @@
 from redis.asyncio import Redis
 
+
 class InventoryStore:
-    def __init__(self, redis: Redis):
-        self.redis = redis
+	def __init__(self, redis: Redis):
+		self.redis = redis
 
-    async def initialize_event(self, event_id: int, total_inventory: int) -> None:
-        key = f"event:{event_id}:available"
-        await self.redis.set(key, total_inventory, nx=True)
+	async def initialize_event(self, event_id: int, total_inventory: int) -> None:
+		key = f'event:{event_id}:available'
+		await self.redis.set(key, total_inventory, nx=True)
 
+	async def claim(self, event_id: int) -> bool:
+		key = f'event:{event_id}:available'
 
-    async def claim(self, event_id: int) -> bool:
-        key = f"event:{event_id}:available"
-
-        lua_script = """
+		lua_script = """
         local counter_key = KEYS[1]
         local count = tonumber(redis.call('GET', counter_key))
         if count and count > 0 then
@@ -23,16 +23,31 @@ class InventoryStore:
         end
         """
 
-        result = await self.redis.eval(lua_script, 1, key)
-        return bool(result)
+		result = await self.redis.eval(lua_script, 1, key)
+		return bool(result)
 
-    async def release(self, event_id: int) -> None:
-        key = f"event:{event_id}:available"
-        await self.redis.incr(key)
+	async def release(self, event_id: int) -> None:
+		key = f'event:{event_id}:available'
+		await self.redis.incr(key)
 
-    async def available_count(self, event_id: int) -> int:
-        key = f"event:{event_id}:available"
-        value = await self.redis.get(key)
-        if not value:
-            return 0
-        return int(value.decode("utf-8"))
+	async def release_batch(self, claims: list[tuple[int, int]]) -> int:
+		lua_script = """
+        for i = 1, #ARGV, 2 do
+            local claim_id = ARGV[i]
+            local event_id = ARGV[i+1]
+            local key = "event:" .. event_id .. ":available"
+            redis.call("INCR", key)
+        end
+        return #ARGV / 2
+        """
+		# Flatten ARGV
+		argv = [str(x) for pair in claims for x in pair]
+		num_released = await self.redis.eval(lua_script, 0, *argv)
+		return num_released
+
+	async def available_count(self, event_id: int) -> int:
+		key = f'event:{event_id}:available'
+		value = await self.redis.get(key)
+		if not value:
+			return 0
+		return int(value.decode('utf-8'))
