@@ -2,7 +2,7 @@ import logging
 
 from fastapi import FastAPI
 
-from .config import settings
+from config import settings
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
