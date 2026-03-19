@@ -13,7 +13,7 @@ async def process_expired_claims(db: Database, inventory_store: InventoryStore):
 
 		while True:
 			batch = await repo.get_expired_active_claims_batch(
-				settings.CLAIM_EXPIRY_WORKER_BATCH, offset
+				settings.CLAIM_EXPIRY_WORKER_BATCH
 			)
 			if not batch:
 				break

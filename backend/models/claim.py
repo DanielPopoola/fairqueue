@@ -12,6 +12,7 @@ class ClaimStatus(StrEnum):
 	CLAIMED = 'claimed'
 	PAYMENT_PENDING = 'payment_pending'
 	CONFIRMED = 'confirmed'
+	RELEASING = "releasing"
 	RELEASED = 'released'
 
 

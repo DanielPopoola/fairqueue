@@ -1,8 +1,7 @@
 from datetime import UTC, datetime
 
-from sqlalchemy import update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
 
 from models import Claim, ClaimStatus
 
@@ -11,24 +10,59 @@ class ClaimsRepository:
 	def __init__(self, db: AsyncSession):
 		self.db = db
 
+	async def create_claim(
+			self,
+			event_id: int,
+			user_id: int,
+			item_id: int,
+			expires_at: datetime | None,
+	) -> Claim:
+		claim = Claim(
+			event_id=event_id,
+            user_id=user_id,
+            item_id=item_id,
+            expires_at=expires_at,
+            status=ClaimStatus.CLAIMED,
+		)
+		self.db.add(claim)
+		await self.db.flush()
+		return claim
+	
+	async def get(self, claim_id: int) -> Claim | None:
+		stmt = select(Claim).where(Claim.id == claim_id)
+		result = await self.db.execute(stmt)
+		return result.scalar_one_or_none()
+	
+	async def get_by_user_and_event(
+        self, user_id: int, event_id: int
+    ) -> Claim | None:
+		stmt = select(Claim).where(
+            Claim.user_id == user_id,
+            Claim.event_id == event_id,
+        )
+		result = await self.db.execute(stmt)
+		return result.scalar_one_or_none()
+
 	async def get_expired_active_claims(self) -> list[Claim]:
 		now = datetime.now(UTC)
 		stmt = (
 			select(Claim)
-			.where(Claim.status.in_(['claimed', 'payment_pending']))
+			.where(Claim.status.in_([
+				ClaimStatus.CLAIMED, ClaimStatus.PAYMENT_PENDING
+			]))
 			.where(Claim.expires_at < now)
 		)
 		result = await self.db.execute(stmt)
 		return result.scalars().all()
 
-	async def get_expired_active_claims_batch(self, batch_size: int, offset: int = 0) -> list[Claim]:
-		now = datetime.now(UTC)
+	async def get_expired_active_claims_batch(self, batch_size: int) -> list[Claim]:
 		stmt = (
 			select(Claim)
-			.where(Claim.status.in_(['claimed', 'payment_pending']))
-			.where(Claim.expires_at < now)
+			.where(Claim.status.in_([
+				ClaimStatus.CLAIMED, ClaimStatus.PAYMENT_PENDING
+			]))
+			.where(Claim.expires_at < datetime.now(UTC))
 			.limit(batch_size)
-			.offset(offset)
 		)
 		result = await self.db.execute(stmt)
 		return result.scalars().all()
