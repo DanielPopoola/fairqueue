@@ -1,10 +1,13 @@
 import asyncio
+import logging
 
 from config import settings
 from core.inventory import InventoryStore
 from database import Database
 from repositories.claims import ClaimsRepository, ClaimStatus
 
+
+logger = logging.getLogger(__name__)
 
 async def process_expired_claims(db: Database, inventory_store: InventoryStore):
 	async with db.managed_session() as session:
@@ -21,13 +24,19 @@ async def process_expired_claims(db: Database, inventory_store: InventoryStore):
 			claim_ids = [c.id for c in batch]
 			claims_to_release = [(c.id, c.event_id) for c in batch]
 
-			# PostgreSQL first (source of truth)
-			await repo.update_status_batch(claim_ids, ClaimStatus.RELEASED)
+			# Step 1: Mark as RELEASING in PostgreSQL (idempotency lock)
+			await repo.update_status_batch(claim_ids, ClaimStatus.RELEASING)
+			await session.commit()
 
-			# Redis second (recoverable if this fails)
-			await inventory_store.release_batch(claims_to_release)
+			try:
+				# Step 2: Update Redis (the side effect)
+				await inventory_store.release_batch(claims_to_release)
 
-			offset += settings.CLAIM_EXPIRY_WORKER_BATCH
+				# Step 3: Mark as fully RELEASED in PostgreSQL
+				await repo.update_status_batch(claim_ids, ClaimStatus.RELEASED)
+			except Exception as e:
+				logger.debug(f'[ClaimExpiryWorker] Redis failed, will retry: {e}')
+				await session.rollback()
 
 
 async def claim_expiry_worker(db: Database, inventory_store: InventoryStore):

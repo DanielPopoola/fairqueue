@@ -59,7 +59,7 @@ class ClaimsRepository:
 		stmt = (
 			select(Claim)
 			.where(Claim.status.in_([
-				ClaimStatus.CLAIMED, ClaimStatus.PAYMENT_PENDING
+				ClaimStatus.CLAIMED, ClaimStatus.PAYMENT_PENDING, ClaimStatus.RELEASING
 			]))
 			.where(Claim.expires_at < datetime.now(UTC))
 			.limit(batch_size)
