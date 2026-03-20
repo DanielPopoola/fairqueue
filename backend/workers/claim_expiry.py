@@ -1,6 +1,8 @@
 import asyncio
 import logging
 
+from redis.asyncio import Redis
+
 from config import settings
 from core.inventory import InventoryStore
 from database import Database
@@ -42,10 +44,9 @@ async def claim_expiry_worker(db: Database, inventory_store: InventoryStore):
 
 
 if __name__ == '__main__':
-	from dependencies import get_redis
 
 	async def main():
-		redis = await get_redis()
+		redis = Redis.from_url(settings.REDIS_URL)
 		db = Database(settings.DATABASE_URL)
 		inventory_store = InventoryStore(redis)
 		await claim_expiry_worker(db, inventory_store)

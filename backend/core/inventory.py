@@ -25,7 +25,7 @@ class InventoryStore:
         end
         """
 
-		result = await self.redis.eval(lua_script, 1, key)
+		result = await self.redis.eval(lua_script, 1, key) # pyright: ignore[reportGeneralTypeIssues]
 		return bool(result)
 
 	async def release(self, event_id: int) -> None:
@@ -44,8 +44,8 @@ class InventoryStore:
         """
 		# Flatten ARGV
 		argv = [str(x) for pair in claims for x in pair]
-		num_released = await self.redis.eval(lua_script, 0, *argv)
-		return num_released
+		num_released = await self.redis.eval(lua_script, 0, *argv) # pyright: ignore[reportGeneralTypeIssues]
+		return num_released # pyright: ignore[reportReturnType]
 
 	async def available_count(self, event_id: int) -> int:
 		key = f'event:{event_id}:available'
