@@ -12,7 +12,7 @@ class ClaimStatus(StrEnum):
 	CLAIMED = 'claimed'
 	PAYMENT_PENDING = 'payment_pending'
 	CONFIRMED = 'confirmed'
-	RELEASING = "releasing"
+	RELEASING = 'releasing'
 	RELEASED = 'released'
 
 
@@ -21,7 +21,7 @@ class Claim(Base):
 
 	id: Mapped[int] = mapped_column(Integer, primary_key=True)
 	event_id: Mapped[int] = mapped_column(ForeignKey('events.id'), index=True)
-	item_id: Mapped[int] = mapped_column(ForeignKey('inventory_items.id'), index=True)
+	item_id: Mapped[int | None] = mapped_column(ForeignKey('inventory_items.id'), nullable=True)
 	user_id: Mapped[int] = mapped_column(ForeignKey('users.id'), index=True)
 	status: Mapped[str] = mapped_column(SQLEnum(ClaimStatus), default=ClaimStatus.CLAIMED)
 	claimed_at: Mapped[datetime] = mapped_column(

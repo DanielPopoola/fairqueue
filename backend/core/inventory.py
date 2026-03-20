@@ -1,7 +1,9 @@
 from redis.asyncio import Redis
+from sqlalchemy.util.typing import final
 
 
 class InventoryStore:
+	@final
 	def __init__(self, redis: Redis):
 		self.redis = redis
 
