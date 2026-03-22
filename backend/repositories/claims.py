@@ -75,3 +75,17 @@ class ClaimsRepository:
 			return
 		stmt = update(Claim).where(Claim.id.in_(claim_ids)).values(status=status)
 		await self.db.execute(stmt)
+
+	async def try_mark_releasing(self, claim_id: int) -> bool:
+		stmt = (
+			update(Claim)
+			.where(
+				Claim.id == claim_id,
+				Claim.status == ClaimStatus.CLAIMED,
+			)
+			.values(status=ClaimStatus.RELEASING)
+		)
+
+		result = await self.db.execute(stmt)
+
+		return result.rowcount == 1

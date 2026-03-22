@@ -43,7 +43,9 @@ class ClaimService:
 		):
 			return
 
-		await self.claims_repo.update_status(claim_id, ClaimStatus.RELEASING)
+		acquired = await self.claims_repo.try_mark_releasing(claim_id)
+		if not acquired:
+			return
 
 		await self.inventory_store.release(event_id)
 
