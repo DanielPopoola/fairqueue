@@ -10,7 +10,7 @@ class QueueService:
 	async def join_queue(self, event_id: int, user_id: int) -> int:
 		key = f'queue:event:{event_id}'
 		score = int(datetime.now(UTC).timestamp() * 1000)
-		await self.redis.zadd(key, {user_id: score}) # pyright: ignore[reportArgumentType]
+		await self.redis.zadd(key, {user_id: score})  # pyright: ignore[reportArgumentType]
 		position = await self.redis.zrank(key, user_id)
 		return position + 1
 
@@ -25,11 +25,11 @@ class QueueService:
         end
         return users
         """
-		result = await self.redis.eval(lua_script, 1, key, count) # pyright: ignore[reportGeneralTypeIssues]
-		return [user.decode('utf-8') for user in result] # pyright: ignore[reportAttributeAccessIssue]
+		result = await self.redis.eval(lua_script, 1, key, count)  # pyright: ignore[reportGeneralTypeIssues]
+		return [user.decode('utf-8') for user in result]  # pyright: ignore[reportAttributeAccessIssue]
 
 	async def get_position(self, event_id: int, user_id: int) -> int | None:
-		key = f"queue:event:{event_id}"
+		key = f'queue:event:{event_id}'
 		position = await self.redis.zrank(key, user_id)
 		if position is None:
 			return None

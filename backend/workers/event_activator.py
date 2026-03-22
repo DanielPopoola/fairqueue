@@ -11,6 +11,7 @@ from repositories import EventRepository
 
 logger = logging.getLogger(__name__)
 
+
 async def activate_pending_events(db: Database, inventory_store: InventoryStore):
 	async with db.managed_session() as session:
 		repo = EventRepository(session)

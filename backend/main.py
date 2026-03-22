@@ -1,20 +1,23 @@
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
+from redis.asyncio import Redis
+
+from api.routers import claims, events, queue
+from config import settings
 from database import Database
 from dependencies import deps
-from config import settings
-from redis.asyncio import Redis
-from api.routers import events, claims, queue
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
 
-    deps.db = Database(settings.DATABASE_URL)
-    deps.redis_client = Redis.from_url(settings.REDIS_URL)
-    yield
-    await deps.redis_client.aclose()
-    await deps.db.engine.dispose()
+	deps.db = Database(settings.DATABASE_URL)
+	deps.redis_client = Redis.from_url(settings.REDIS_URL)
+	yield
+	await deps.redis_client.aclose()
+	await deps.db.engine.dispose()
+
 
 app = FastAPI(title=settings.APP_NAME, lifespan=lifespan)
 
