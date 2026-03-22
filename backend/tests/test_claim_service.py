@@ -1,7 +1,8 @@
 import pytest
 import asyncio
 
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from core.inventory import InventoryStore
 from models.claim import Claim, ClaimStatus
@@ -160,6 +161,42 @@ async def test_redis_suceeds_db_final_write_fails(failing_db_session, real_redis
     await failing_db_session.refresh(claim)
     assert claim.status == ClaimStatus.RELEASING
 
+
+@pytest.mark.asyncio
+async def test_concurrent_claims_claim_once(db_engine, real_redis):
+    session_factory = async_sessionmaker(
+        db_engine, class_=AsyncSession, autoflush=True, expire_on_commit=False
+    )
+
+    # Seed data using dedicated session
+    async with session_factory() as session:
+        event = await seed_event(session)
+        user = await seed_user(session)
+        await session.commit()
+
+    await real_redis.set(f"event:{event.id}:available", 2)
+
+    store = InventoryStore(real_redis)
+
+    async def attempt_claim():
+        async with session_factory() as session:
+            repo = ClaimsRepository(session)
+            service = ClaimService(repo, store)
+            try:
+                claim = await service.create_claim(event_id=event.id, user_id=user.id)
+                await session.commit()
+                return claim
+            except ValueError as e:
+                return e
+
+    results = await asyncio.gather(attempt_claim(), attempt_claim())
+
+    errors = [r for r in results if isinstance(r, ValueError)]
+    assert len(errors) == 1
+
+    count = await real_redis.get(f"event:{event.id}:available")
+    assert int(count) == 1
+    
 @pytest.mark.asyncio
 async def test_concurrent_release_increments_once(db_session, real_redis):
     event = await seed_event(db_session)

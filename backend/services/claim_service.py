@@ -1,5 +1,7 @@
 from datetime import UTC, datetime, timedelta
 
+from sqlalchemy.exc import IntegrityError
+
 from config import settings
 from core.inventory import InventoryStore
 from models import Claim, ClaimStatus
@@ -13,19 +15,22 @@ class ClaimService:
 
 	async def create_claim(self, event_id: int, user_id: int) -> Claim:
 		existing = await self.claims_repo.get_by_user_and_event(user_id=user_id, event_id=event_id)
-
 		if existing and existing.status in (ClaimStatus.CLAIMED, ClaimStatus.PAYMENT_PENDING):
-			raise Exception('User already has active claim')
+			raise ValueError('User already has active claim')
 
 		success = await self.inventory_store.claim(event_id)
 		if not success:
-			raise Exception('Sold out')
+			raise ValueError('Sold out')
 
 		expires_at = datetime.now(UTC) + timedelta(seconds=settings.CLAIM_TTL_SECONDS)
 
-		claim = await self.claims_repo.create_claim(
-			event_id=event_id, user_id=user_id, expires_at=expires_at
-		)
+		try:
+			claim = await self.claims_repo.create_claim(
+				event_id=event_id, user_id=user_id, expires_at=expires_at
+			)
+		except IntegrityError as e:
+			await self.inventory_store.release(event_id)
+			raise ValueError('User already has active claim') from e
 
 		return claim
 

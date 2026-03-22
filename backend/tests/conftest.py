@@ -1,8 +1,10 @@
 import asyncio
 import pytest
 import pytest_asyncio
+
 from testcontainers.redis import RedisContainer
 from testcontainers.postgres import PostgresContainer
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from redis.asyncio import Redis
 
@@ -35,6 +37,12 @@ async def db_engine(db_url):
     engine = create_async_engine(db_url)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # create_all skips partial indexes — create manually
+        await conn.execute(text("""
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_claims_active_user_event
+            ON claims (user_id, event_id)
+            WHERE status IN ('CLAIMED', 'PAYMENT_PENDING')
+        """))
     yield engine
     await engine.dispose()
 
