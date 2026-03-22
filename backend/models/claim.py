@@ -31,13 +31,17 @@ class Claim(Base):
 	expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 	__table_args__ = (
-		# background job query: "find all unconfirmed claims that have expired"
-		# partial: skips confirmed/released rows which are never scanned by expiry job
 		Index(
 			'ix_claims_active_expiry',
 			'expires_at',
 			postgresql_where=(status.in_(['claimed', 'payment_pending'])),
 		),
-		# dashboard query: "how many confirmed claims for event 123?"
 		Index('ix_claims_event_status', 'event_id', 'status'),
+		Index(
+			'uq_claims_active_user_event',
+			'user_id',
+			'event_id',
+			unique=True,
+			postgresql_where=(status.in_(['claimed', 'payment_pending'])),
+		),
 	)
