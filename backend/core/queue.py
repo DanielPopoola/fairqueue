@@ -10,7 +10,7 @@ class QueueService:
 	async def join_queue(self, event_id: int, user_id: int) -> int:
 		key = f'queue:event:{event_id}'
 		score = int(datetime.now(UTC).timestamp() * 1000)
-		await self.redis.zadd(key, {user_id: score})  # pyright: ignore[reportArgumentType]
+		await self.redis.zadd(key, {user_id: score}, nx=True)  # pyright: ignore[reportArgumentType]
 		position = await self.redis.zrank(key, user_id)
 		return position + 1
 

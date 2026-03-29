@@ -29,8 +29,10 @@ class ClaimService:
 				event_id=event_id, user_id=user_id, expires_at=expires_at
 			)
 		except IntegrityError as e:
-			await self.inventory_store.release(event_id)
-			raise ValueError('User already has active claim') from e
+			if 'uq_claims_active_user_event' in str(e.orig):
+				await self.inventory_store.release(event_id)
+				raise ValueError('User already has active claim') from e
+			raise
 
 		return claim
 

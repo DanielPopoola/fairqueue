@@ -13,6 +13,7 @@ dependencies = [
     "ruff>=0.15.6",
     "sqlalchemy>=2.0.48",
     "testcontainers>=4.14.2",
+    "ty>=0.0.26",
 ]
 
 [tool.ruff]
