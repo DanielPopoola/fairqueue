@@ -30,7 +30,7 @@ class ClaimService:
 			)
 		except IntegrityError as e:
 			if 'uq_claims_active_user_event' in str(e.orig):
-				await self.inventory_store.release(event_id)
+				await self.inventory_store.release(event_id, claim_id=0)  # Use 0 as placeholder
 				raise ValueError('User already has active claim') from e
 			raise
 
@@ -44,16 +44,13 @@ class ClaimService:
 		if claim.event_id != event_id:
 			return
 
-		if claim.status in (
-			ClaimStatus.RELEASED,
-			ClaimStatus.CONFIRMED,
-		):
+		if claim.status in (ClaimStatus.RELEASED, ClaimStatus.CONFIRMED):
 			return
 
 		acquired = await self.claims_repo.try_mark_releasing(claim_id)
 		if not acquired:
 			return
 
-		await self.inventory_store.release(event_id)
+		await self.inventory_store.release(event_id, claim_id)
 
 		await self.claims_repo.update_status(claim_id, ClaimStatus.RELEASED)
