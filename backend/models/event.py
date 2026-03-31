@@ -31,10 +31,12 @@ class Event(Base):
 	sale_start: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 	sale_end: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 	allocation_strategy: Mapped[AllocationStrategy] = mapped_column(
-		SQLEnum(AllocationStrategy, name="allocation_strategy"), default=AllocationStrategy.FIFO
+		SQLEnum(AllocationStrategy, name='allocation_strategy'), default=AllocationStrategy.FIFO
 	)
 	price_per_item: Mapped[int] = mapped_column(Integer)
-	status: Mapped[EventStatus] = mapped_column(SQLEnum(EventStatus, name="event_status"), default=EventStatus.UPCOMING)
+	status: Mapped[EventStatus] = mapped_column(
+		SQLEnum(EventStatus, name='event_status'), default=EventStatus.UPCOMING
+	)
 	created_at: Mapped[datetime] = mapped_column(
 		DateTime(timezone=True), default=lambda: datetime.now(UTC)
 	)
