@@ -9,10 +9,19 @@ class PaymentRepository:
 		self.db = db
 
 	async def create_payment(
-		self, claim_id: int, payment_reference: str, price: int, status: PaymentStatus
+		self,
+		claim_id: int,
+		payment_reference: str,
+		price: int,
+		status: PaymentStatus,
+		authorization_url: str,
 	) -> Payment:
 		payment = Payment(
-			claim_id=claim_id, payment_reference=payment_reference, price=price, status=status
+			claim_id=claim_id,
+			payment_reference=payment_reference,
+			authorization_url=authorization_url,
+			price=price,
+			status=status,
 		)
 		self.db.add(payment)
 		await self.db.flush()

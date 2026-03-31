@@ -1,5 +1,3 @@
-import hashlib
-import hmac
 import json
 import uuid
 
@@ -34,7 +32,7 @@ class PaymentService:
 
 		event = await self._get_event(claim.event_id)
 
-		reference = uuid.uuid4().hex()
+		reference = uuid.uuid4().hex()  # pyright: ignore[reportCallIssue]
 
 		response_data = await self._initialize_paystack_payment(
 			reference=reference,
@@ -136,16 +134,6 @@ class PaymentService:
 			raise RuntimeError('Failed to initialize payment')
 
 		return data['data']
-
-	def _verify_signature(self, payload: bytes, signature: str) -> None:
-		expected = hmac.new(
-			self.paystack_secret.encode(),
-			payload,
-			hashlib.sha512,
-		).hexdigest()
-
-		if not hmac.compare_digest(expected, signature):
-			raise ValueError('Invalid webhook signature')
 
 	def _parse_payload(self, payload: bytes) -> dict:
 		try:

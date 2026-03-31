@@ -20,7 +20,7 @@ async def paystack_webhook(
 	payload = await request.body()
 
 	expected = hmac.new(
-		settings.PAYSTACK_SECRET_KEY.encode(),
+		settings.PAYSTACK_SECRET.encode(),
 		payload,
 		hashlib.sha512,
 	).hexdigest()
