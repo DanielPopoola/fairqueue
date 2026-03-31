@@ -22,7 +22,7 @@ class InventoryItem(Base):
 	event_id: Mapped[int] = mapped_column(ForeignKey('events.id'), index=True)
 	item_type: Mapped[str] = mapped_column(String)
 	price: Mapped[int] = mapped_column(Integer)  # price in kobo (smallest unit, avoids decimals)
-	status: Mapped[str] = mapped_column(SQLEnum(ItemStatus), default=ItemStatus.AVAILABLE)
+	status: Mapped[ItemStatus] = mapped_column(SQLEnum(ItemStatus, name="item_status"), default=ItemStatus.AVAILABLE)
 	created_at: Mapped[datetime] = mapped_column(
 		DateTime(timezone=True), default=lambda: datetime.now(UTC)
 	)

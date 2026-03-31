@@ -23,7 +23,7 @@ class QueueEntry(Base):
 	event_id: Mapped[int] = mapped_column(ForeignKey('events.id'), index=True)
 	user_id: Mapped[int] = mapped_column(ForeignKey('users.id'), index=True)
 	queue_position: Mapped[int] = mapped_column(Integer)
-	status: Mapped[str] = mapped_column(SQLEnum(QueueStatus), default=QueueStatus.WAITING)
+	status: Mapped[QueueStatus] = mapped_column(SQLEnum(QueueStatus, name="queue_status"), default=QueueStatus.WAITING)
 	joined_at: Mapped[datetime] = mapped_column(
 		DateTime(timezone=True), default=lambda: datetime.now(UTC)
 	)

@@ -38,6 +38,7 @@ config.set_main_option('sqlalchemy.url', database_url)
 # Import Base so autogenerate can diff ORM models against the live schema
 # ---------------------------------------------------------------------------
 from database import Base  # noqa: E402
+from models import *
 
 target_metadata = Base.metadata
 

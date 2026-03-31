@@ -23,7 +23,7 @@ class Claim(Base):
 	event_id: Mapped[int] = mapped_column(ForeignKey('events.id'), index=True)
 	item_id: Mapped[int | None] = mapped_column(ForeignKey('inventory_items.id'), nullable=True)
 	user_id: Mapped[int] = mapped_column(ForeignKey('users.id'), index=True)
-	status: Mapped[str] = mapped_column(SQLEnum(ClaimStatus), default=ClaimStatus.CLAIMED)
+	status: Mapped[ClaimStatus] = mapped_column(SQLEnum(ClaimStatus), default=ClaimStatus.CLAIMED)
 	claimed_at: Mapped[datetime] = mapped_column(
 		DateTime(timezone=True), default=lambda: datetime.now(UTC)
 	)
