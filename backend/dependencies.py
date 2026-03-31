@@ -5,7 +5,7 @@ from fastapi import Depends
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core import InventoryStore, QueueService
+from core import InventoryStore, QueueService, WebhookQueue
 from database import Database
 from repositories import ClaimsRepository, EventRepository, QueueRepository
 from services import ClaimService, EventService
@@ -39,6 +39,10 @@ async def get_inventory_store(cache: Annotated[Redis, Depends(get_redis)]):
 
 async def get_queue_service(cache: Annotated[Redis, Depends(get_redis)]):
 	return QueueService(cache)
+
+
+async def get_webhook_queue(queue: Annotated[Redis, Depends(get_redis)]):
+	return WebhookQueue(queue)
 
 
 async def get_claims_repository(

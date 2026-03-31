@@ -5,6 +5,8 @@ class Settings(BaseSettings):
 	DATABASE_URL: str
 	REDIS_URL: str
 
+	PAYSTACK_SECRET: str
+
 	CLAIM_TTL_SECONDS: int = 300
 	CLAIM_EXPIRY_WORKER_INTERVAL: int = 60
 	CLAIM_EXPIRY_WORKER_BATCH: int = 100

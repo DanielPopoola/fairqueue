@@ -20,6 +20,7 @@ class Payment(Base):
 	id: Mapped[int] = mapped_column(Integer, primary_key=True)
 	claim_id: Mapped[int] = mapped_column(ForeignKey('claims.id'), index=True)
 	payment_reference: Mapped[str] = mapped_column(String, unique=True, index=True)
+	authorization_url: Mapped[str] = mapped_column(String, index=True)
 	price: Mapped[int] = mapped_column(Integer)  # price in kobo (smallest unit, avoids decimals)
 	status: Mapped[PaymentStatus] = mapped_column(
 		SQLEnum(PaymentStatus, name='payment_status'), default=PaymentStatus.PENDING

@@ -18,6 +18,11 @@ class PaymentRepository:
 		await self.db.flush()
 		return payment
 
+	async def get_by_claim_id(self, claim_id: int) -> Payment | None:
+		stmt = select(Payment).where(Payment.claim_id == claim_id)
+		result = await self.db.execute(stmt)
+		return result.scalar_one_or_none()
+
 	async def get_payment_by_reference(self, reference: str) -> Payment | None:
 		stmt = select(Payment).where(Payment.payment_reference == reference)
 		result = await self.db.execute(stmt)
