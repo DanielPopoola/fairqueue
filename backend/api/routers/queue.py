@@ -50,7 +50,7 @@ async def get_position(
 
 	return QueuePositionResponse(
 		position=position,
-		status=entry.status if entry else 'waiting',  # pyright: ignore[reportArgumentType]
+		status=entry.status if entry else 'waiting',
 		event_id=event_id,
 		user_id=user_id,
 	)

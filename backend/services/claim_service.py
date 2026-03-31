@@ -15,7 +15,7 @@ class ClaimService:
 	def __init__(self, claims_repo: ClaimsRepository, inventory_store: InventoryStore):
 		self.claims_repo = claims_repo
 		self.inventory_store = inventory_store
- 
+
 	async def create_claim(self, event_id: int, user_id: int) -> Claim:
 		existing = await self.claims_repo.get_by_user_and_event(user_id=user_id, event_id=event_id)
 		if existing and existing.status in (ClaimStatus.CLAIMED, ClaimStatus.PAYMENT_PENDING):
@@ -34,8 +34,8 @@ class ClaimService:
 		except IntegrityError as e:
 			if 'uq_claims_active_user_event' in str(e.orig):
 				logger.warning(
-					f"Duplicate claim attempt: event={event_id}, user={user_id}. "
-                	f"Redis inventory deflated by 1 (will self-correct on claim expiry)."
+					f'Duplicate claim attempt: event={event_id}, user={user_id}. '
+					f'Redis inventory deflated by 1 (will self-correct on claim expiry).'
 				)
 				raise ValueError('User already has active claim') from e
 			raise
