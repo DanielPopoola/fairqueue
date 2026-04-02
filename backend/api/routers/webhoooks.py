@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import json
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
@@ -28,6 +29,6 @@ async def paystack_webhook(
 	if not hmac.compare_digest(expected, x_paystack_signature):
 		raise HTTPException(status_code=400, detail='Invalid signature')
 
-	await queue.push(payload)
+	await queue.push(json.dumps({'payload': payload.decode()}))
 
 	return {'status': 'ok'}

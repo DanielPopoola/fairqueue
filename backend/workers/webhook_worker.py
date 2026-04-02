@@ -18,7 +18,6 @@ async def webhook_worker(db: Database, webhook_queue: WebhookQueue, paystack_sec
 		try:
 			job = await webhook_queue.pop(timeout=5)
 			if not job:
-				await asyncio.sleep(0.1)
 				continue
 
 			async with db.managed_session() as session:
@@ -40,6 +39,6 @@ if __name__ == '__main__':
 		redis = Redis.from_url(settings.REDIS_URL)
 		db = Database(settings.DATABASE_URL)
 		queue = WebhookQueue(redis)
-		await webhook_worker(db, queue, settings.PAYSTACK_SECRET_KEY)
+		await webhook_worker(db, queue, settings.PAYSTACK_SECRET)
 
 	asyncio.run(main())

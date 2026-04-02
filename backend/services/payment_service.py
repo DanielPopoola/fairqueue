@@ -1,10 +1,13 @@
 import json
+import logging
 import uuid
 
 import httpx
 
 from models import ClaimStatus, PaymentStatus
 from repositories import ClaimsRepository, EventRepository, PaymentRepository
+
+logger = logging.getLogger(__name__)
 
 
 class PaymentService:
@@ -23,7 +26,7 @@ class PaymentService:
 		self.paystack_secret = paystack_secret
 		self.client = httpx.AsyncClient(timeout=10.0)
 
-	async def initialize_payment(self, claim_id: int, user_email: str):
+	async def initialize_payment(self, claim_id: int, user_email: str) -> str:
 		claim = await self._get_valid_claim(claim_id)
 
 		existing_payment = await self.payments_repo.get_by_claim_id(claim_id)
@@ -32,22 +35,25 @@ class PaymentService:
 
 		event = await self._get_event(claim.event_id)
 
-		reference = uuid.uuid4().hex()  # pyright: ignore[reportCallIssue]
+		reference = str(uuid.uuid4())
+
+		await self.payments_repo.initialize_payment(
+			claim_id=claim_id,
+			payment_reference=reference,
+			price=event.price_per_item,
+			status=PaymentStatus.INITIALIZING,
+		)
 
 		response_data = await self._initialize_paystack_payment(
 			reference=reference,
 			email=user_email,
 			amount=event.price_per_item,
 		)
-
 		authorization_url = response_data['authorization_url']
 
-		await self.payments_repo.create_payment(
-			claim_id=claim_id,
-			payment_reference=reference,
-			price=event.price_per_item,
+		await self.payments_repo.mark_pending(
+			reference=reference,
 			authorization_url=authorization_url,
-			status=PaymentStatus.PENDING,
 		)
 
 		await self.claims_repo.update_status(claim_id, ClaimStatus.PAYMENT_PENDING)
@@ -63,9 +69,11 @@ class PaymentService:
 		payment_data = data.get('data', {})
 		reference = payment_data.get('reference')
 
-		if not reference:
-			return
+		await self.process_successful_payment(reference)
 
+		return
+	
+	async def process_successful_payment(self, reference: str) -> None:
 		payment = await self.payments_repo.get_payment_by_reference(reference)
 		if not payment:
 			return
@@ -84,12 +92,7 @@ class PaymentService:
 
 		if claim.status == ClaimStatus.RELEASED:
 			await self.payments_repo.update_status(reference, PaymentStatus.FAILED)
-
-			await self._trigger_refund(reference)
-
-			return
-
-		return
+			logger.error(f"MANUAL REFUND NEEDED: reference={reference}")
 
 	async def _get_valid_claim(self, claim_id: int):
 		claim = await self.claims_repo.get(claim_id)

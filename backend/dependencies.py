@@ -33,16 +33,16 @@ async def get_redis() -> Redis:
 	return deps.redis_client
 
 
-async def get_inventory_store(cache: Annotated[Redis, Depends(get_redis)]):
-	return InventoryStore(cache)
+async def get_inventory_store(redis: Annotated[Redis, Depends(get_redis)]):
+	return InventoryStore(redis)
 
 
-async def get_queue_service(cache: Annotated[Redis, Depends(get_redis)]):
-	return QueueService(cache)
+async def get_queue_service(redis: Annotated[Redis, Depends(get_redis)]):
+	return QueueService(redis)
 
 
-async def get_webhook_queue(queue: Annotated[Redis, Depends(get_redis)]):
-	return WebhookQueue(queue)
+async def get_webhook_queue(redis: Annotated[Redis, Depends(get_redis)]):
+	return WebhookQueue(redis)
 
 
 async def get_claims_repository(
