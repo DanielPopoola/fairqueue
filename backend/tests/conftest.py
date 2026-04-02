@@ -1,4 +1,3 @@
-import asyncio
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
@@ -14,11 +13,9 @@ from main import app
 from core import InventoryStore, QueueService
 from database import Base
 from core.inventory import InventoryStore
-from models.claim import Claim, ClaimStatus
-from models.event import Event, AllocationStrategy, EventStatus
-from models.user import User
-from repositories.claims import ClaimsRepository
-from services.claim_service import ClaimService
+from models import Claim, ClaimStatus, Event, AllocationStrategy, EventStatus, User
+from repositories import ClaimsRepository, EventRepository, PaymentRepository
+from services import PaymentService
 from datetime import UTC, datetime, timedelta
 
 
@@ -96,6 +93,19 @@ async def inventory_store(real_redis):
 async def queue_service(real_redis):
 	return QueueService(real_redis)
 
+@pytest_asyncio.fixture
+async def payment_service(db_session):
+	claims_repo = ClaimsRepository(db_session)
+	events_repo = EventRepository(db_session)
+	payments_repo = PaymentRepository(db_session)
+	service = PaymentService(
+		claims_repo=claims_repo,
+		events_repo=events_repo,
+		payments_repo=payments_repo,
+		paystack_secret='test-secret',
+	)
+	yield service
+	await service.client.aclose()
 
 @pytest_asyncio.fixture
 async def api_client(db_engine, real_redis):
@@ -146,12 +156,7 @@ async def failing_db_session(db_engine):
 		yield session
 		await session.rollback()
 
-
-# Seed helpers
-
-
 # --- Seed helpers ---
-
 
 async def seed_event(session: AsyncSession) -> Event:
 	event = Event(

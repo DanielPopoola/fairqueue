@@ -72,7 +72,7 @@ class PaymentService:
 		await self.process_successful_payment(reference)
 
 		return
-	
+
 	async def process_successful_payment(self, reference: str) -> None:
 		payment = await self.payments_repo.get_payment_by_reference(reference)
 		if not payment:
@@ -92,7 +92,7 @@ class PaymentService:
 
 		if claim.status == ClaimStatus.RELEASED:
 			await self.payments_repo.update_status(reference, PaymentStatus.FAILED)
-			logger.error(f"MANUAL REFUND NEEDED: reference={reference}")
+			logger.error(f'MANUAL REFUND NEEDED: reference={reference}')
 
 	async def _get_valid_claim(self, claim_id: int):
 		claim = await self.claims_repo.get(claim_id)

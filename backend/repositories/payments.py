@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from datetime import datetime, timedelta, UTC
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -59,11 +59,7 @@ class PaymentRepository:
 	async def get_stale_payments(self, batch_size: int) -> Sequence[Payment]:
 		stmt = (
 			select(Payment)
-			.where(
-				Payment.status.in_(
-					[PaymentStatus.INITIALIZING, PaymentStatus.PENDING]
-				)
-			)
+			.where(Payment.status.in_([PaymentStatus.INITIALIZING, PaymentStatus.PENDING]))
 			.where(Payment.updated_at < datetime.now(UTC) - timedelta(minutes=10))
 			.limit(batch_size)
 		)
