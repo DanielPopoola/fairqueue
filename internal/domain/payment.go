@@ -11,47 +11,27 @@ const (
 	PaymentStatusFailed       PaymentStatus = "FAILED"
 )
 
-// PendingReconciliationThreshold is how long a PENDING payment
-// can sit without a webhook before the reconciliation worker
-// polls Paystack to check its real state.
-const PendingReconciliationThreshold = 3 * time.Minute
-
-// InitializingRetryThreshold is how long an INITIALIZING payment
-// can sit before the reconciliation worker retries the Paystack call.
-const InitializingRetryThreshold = 2 * time.Minute
-
 type Payment struct {
-	ID                string
-	ClaimID           string
-	EventID           string
-	UserID            string
-	AmountKobo        int64
-	Status            PaymentStatus
-	PaystackReference string // set after Paystack call succeeds
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
-}
-
-// IsReconcilable returns true if this payment is stuck in a
-// state that the reconciliation worker should act on.
-func (p *Payment) IsReconcilable() bool {
-	switch p.Status { //nolint:exhaustive // only payments stuck in initializing or pending need reconciliation
-	case PaymentStatusInitializing:
-		return time.Since(p.CreatedAt) > InitializingRetryThreshold
-	case PaymentStatusPending:
-		return time.Since(p.UpdatedAt) > PendingReconciliationThreshold
-	default:
-		return false
-	}
+	ID               string
+	ClaimID          string
+	EventID          string
+	UserID           string
+	AmountKobo       int64
+	Status           PaymentStatus
+	Reference        string
+	AuthorizationURL *string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	FailureReason    *string
 }
 
 // MarkPending transitions from INITIALIZING to PENDING after
 // the Paystack initialization call succeeds.
-func (p *Payment) MarkPending(paystackReference string) error {
+func (p *Payment) MarkPending(authorizationURL string) error {
 	if p.Status != PaymentStatusInitializing {
 		return ErrInvalidTransition
 	}
-	p.PaystackReference = paystackReference
+	p.AuthorizationURL = &authorizationURL
 	p.Status = PaymentStatusPending
 	p.UpdatedAt = time.Now()
 	return nil
@@ -70,11 +50,12 @@ func (p *Payment) Confirm() error {
 
 // Fail transitions from PENDING to FAILED.
 // Called by webhook handler or reconciliation worker.
-func (p *Payment) Fail() error {
+func (p *Payment) Fail(reason string) error {
 	if p.Status != PaymentStatusPending {
 		return ErrInvalidTransition
 	}
 	p.Status = PaymentStatusFailed
+	p.FailureReason = &reason
 	p.UpdatedAt = time.Now()
 	return nil
 }
