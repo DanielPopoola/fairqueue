@@ -19,10 +19,10 @@ type Payment struct {
 	AmountKobo       int64
 	Status           PaymentStatus
 	Reference        string
+	FailureReason    *string
 	AuthorizationURL *string
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
-	FailureReason    *string
 }
 
 // MarkPending transitions from INITIALIZING to PENDING after

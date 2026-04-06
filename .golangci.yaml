@@ -54,6 +54,8 @@ linters:
           - errcheck
           - gosec
           - govet
+          - errorlint
+          - exhaustive
       
       # Exclude linting for generated or temporary files
       - path: '(^|/)tmp/'

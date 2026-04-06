@@ -7,6 +7,7 @@ var (
 	ErrEventNotActive    = errors.New("event is not active")
 	ErrEventSoldOut      = errors.New("event is sold out")
 	ErrInvalidTransition = errors.New("invalid state transition")
+	ErrEventNotFound     = errors.New("event not found")
 
 	// Claim errors
 	ErrClaimNotFound     = errors.New("claim not found")
@@ -15,9 +16,10 @@ var (
 	ErrClaimNotClaimable = errors.New("claim is not in a claimable state")
 
 	// Queue errors
-	ErrAlreadyInQueue    = errors.New("user is already in queue for this event")
-	ErrQueueEntryExpired = errors.New("queue entry has expired")
-	ErrNotAdmitted       = errors.New("user has not been admitted from queue")
+	ErrQueueEntryNotFound = errors.New("queue entry not found")
+	ErrAlreadyInQueue     = errors.New("user is already in queue for this event")
+	ErrQueueEntryExpired  = errors.New("queue entry has expired")
+	ErrNotAdmitted        = errors.New("user has not been admitted from queue")
 
 	// Payment errors
 	ErrPaymentNotFound        = errors.New("payment not found")

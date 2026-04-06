@@ -80,6 +80,7 @@ CREATE TABLE payments (
     status              VARCHAR(50) NOT NULL DEFAULT 'INITIALIZING',
     reference           VARCHAR(255) UNIQUE,
     failure_reason      TEXT,
+    authorization_url   VARCHAR(255),
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
