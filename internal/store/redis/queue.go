@@ -79,6 +79,30 @@ var admitBatchScript = redis.NewScript(`
 	return userIDs
 `)
 
+// evictExpiredScript atomically finds and removes users whose
+// admission window has expired, returning their userIDs.
+//
+// KEYS[1] → admitted:{event_id}
+// ARGV[1] → cutoff timestamp (nanoseconds) — anyone admitted
+//
+//	before this time has exceeded their window
+var evictExpiredScript = redis.NewScript(`
+	local admitted = KEYS[1]
+	local cutoff   = ARGV[1]
+
+	-- Find all members with score below the cutoff
+	local expired = redis.call("ZRANGEBYSCORE", admitted, "0", cutoff)
+
+	if #expired == 0 then
+		return {}
+	end
+
+	-- Remove them all in one operation
+	redis.call("ZREM", admitted, unpack(expired))
+
+	return expired
+`)
+
 // QueueStore manages the virtual waiting queue using two Redis ZSETs.
 type QueueStore struct {
 	client *Client
@@ -139,7 +163,7 @@ func (s *QueueStore) AdmitNextBatch(ctx context.Context, eventID string, n int64
 
 	res, err := admitBatchScript.Run(ctx, s.client.rdb, keys, args...).StringSlice()
 	if err != nil {
-		if !errors.Is(err, redis.Nil) {
+		if errors.Is(err, redis.Nil) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("admitting batch: %w", err)
@@ -191,22 +215,26 @@ func (s *QueueStore) RemoveWaiting(ctx context.Context, eventID, userID string) 
 	return nil
 }
 
-// GetExpiredAdmitted returns userIDs whose admission window has passed.
-// The eviction worker uses this to clean up users who were admitted
-// but never completed a claim.
-func (s *QueueStore) GetExpiredAdmitted(ctx context.Context, eventID string, admissionTTL time.Duration) ([]string, error) {
+// EvictExpiredAdmitted atomically finds and removes users whose
+// admission window has expired. Returns their userIDs so the
+// worker can update Postgres and notify them.
+func (s *QueueStore) EvictExpiredAdmitted(ctx context.Context, eventID string, admissionTTL time.Duration) ([]string, error) {
 	cutoff := fmt.Sprintf("%d", time.Now().Add(-admissionTTL).UnixNano())
 
-	results, err := s.client.rdb.ZRangeArgs(ctx, redis.ZRangeArgs{
-		Key:     s.admittedKey(eventID),
-		ByScore: true,
-		Start:   "0",
-		Stop:    cutoff,
-	}).Result()
+	res, err := evictExpiredScript.Run(
+		ctx,
+		s.client.rdb,
+		[]string{s.admittedKey(eventID)},
+		cutoff,
+	).StringSlice()
 	if err != nil {
-		return nil, fmt.Errorf("getting expired admitted users: %w", err)
+		if errors.Is(err, redis.Nil) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("evicting expired admitted users: %w", err)
 	}
-	return results, nil
+
+	return res, nil
 }
 
 // WaitingCount returns the number of users currently waiting.
