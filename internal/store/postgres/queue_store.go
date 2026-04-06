@@ -188,6 +188,43 @@ func (s *QueueStore) MarkAdmitted(ctx context.Context, id string) error {
 	return nil
 }
 
+// MarkAdmittedBatch updates all queue entries for the given
+// customerIDs to ADMITTED in a single query.
+func (s *QueueStore) MarkAdmittedBatch(ctx context.Context, eventID string, customerIDs []string) error {
+	query := `
+		UPDATE queue_entries
+		SET status = 'ADMITTED',
+		    admitted_at = $1,
+		    updated_at  = $1
+		WHERE customer_id = ANY($2)
+		AND   event_id    = $3
+		AND   status      = 'WAITING'
+	`
+
+	_, err := s.db.Pool.Exec(ctx, query, time.Now(), customerIDs, eventID)
+	if err != nil {
+		return fmt.Errorf("batch admitting queue entries: %w", err)
+	}
+	return nil
+}
+
+func (s *QueueStore) MarkExpiredBatch(ctx context.Context, eventID string, evicted []string) error {
+	query := `
+		UPDATE queue_entries
+		SET status = 'EXPIRED',
+			updated_at = $1
+		WHERE customer_id = ANY($2)
+		AND event_id = $3
+		AND status = 'ADMITTED'
+	`
+
+	_, err := s.db.Pool.Exec(ctx, query, time.Now(), evicted, eventID)
+	if err != nil {
+		return fmt.Errorf("batch evicting admitted queue entries: %w", err)
+	}
+	return nil
+}
+
 func scanQueueEntries(rows pgx.Rows) ([]domain.QueueEntry, error) {
 	results, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (domain.QueueEntry, error) {
 		var q domain.QueueEntry

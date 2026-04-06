@@ -59,7 +59,7 @@ func (t *Tokenizer) Generate(customerID, eventID string) (string, error) {
 	return encodedPayload + "." + sig, nil
 }
 
-// Verify parses and validates a token, returning the user and event IDs
+// Verify parses and validates a token, returning the customer and event IDs
 // if the token is valid and unexpired.
 func (t *Tokenizer) Verify(token string) (customerID, eventID string, err error) {
 	parts := strings.SplitN(token, ".", 2)

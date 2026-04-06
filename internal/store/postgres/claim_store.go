@@ -109,6 +109,23 @@ func (s *ClaimStore) GetExpiredClaims(ctx context.Context) ([]domain.Claim, erro
 	return pgx.CollectRows(rows, pgx.RowToStructByPos[domain.Claim])
 }
 
+// CountActive returns the number of CLAIMED claims for an event.
+// Used as a fallback when the Redis inventory cache is unavailable.
+func (s *ClaimStore) CountActive(ctx context.Context, eventID string) (int64, error) {
+	query := `
+		SELECT COUNT(*)
+		FROM claims
+		WHERE event_id = $1
+		AND status = 'CLAIMED'`
+
+	var count int64
+	err := s.db.Pool.QueryRow(ctx, query, eventID).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("counting active claims: %w", err)
+	}
+	return count, nil
+}
+
 func (s *ClaimStore) UpdateStatus(
 	ctx context.Context,
 	id string,
