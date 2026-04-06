@@ -13,12 +13,12 @@ const (
 const ClaimTTL = 10 * time.Minute
 
 type Claim struct {
-	ID        string
-	EventID   string
-	UserID    string
-	Status    ClaimStatus
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID         string
+	EventID    string
+	CustomerID string
+	Status     ClaimStatus
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
 
 // IsExpired returns true if the claim has been in CLAIMED state

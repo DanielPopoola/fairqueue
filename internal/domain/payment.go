@@ -14,13 +14,12 @@ const (
 type Payment struct {
 	ID               string
 	ClaimID          string
-	EventID          string
-	UserID           string
-	AmountKobo       int64
+	CustomerID       string
+	Amount           int64
 	Status           PaymentStatus
-	Reference        string
-	FailureReason    *string
+	Reference        *string
 	AuthorizationURL *string
+	FailureReason    *string
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 }

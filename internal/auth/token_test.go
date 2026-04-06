@@ -16,12 +16,12 @@ func TestTokenizer_GenerateAndVerify(t *testing.T) {
 			t.Fatalf("expected no error, got %v", err)
 		}
 
-		userID, eventID, err := tokenizer.Verify(token)
+		customerID, eventID, err := tokenizer.Verify(token)
 		if err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
-		if userID != "user-123" {
-			t.Errorf("expected user-123, got %s", userID)
+		if customerID != "user-123" {
+			t.Errorf("expected user-123, got %s", customerID)
 		}
 		if eventID != "event-456" {
 			t.Errorf("expected event-456, got %s", eventID)

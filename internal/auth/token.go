@@ -21,9 +21,9 @@ var (
 // Unexported because nothing outside this package
 // should construct one directly.
 type claims struct {
-	UserID    string    `json:"user_id"`
-	EventID   string    `json:"event_id"`
-	ExpiresAt time.Time `json:"expires_at"`
+	CustomerID string    `json:"customer_id"`
+	EventID    string    `json:"event_id"`
+	ExpiresAt  time.Time `json:"expires_at"`
 }
 
 // Tokenizer generates and verifies admission tokens.
@@ -41,11 +41,11 @@ func NewTokenizer(secret string, ttl time.Duration) *Tokenizer {
 }
 
 // Generate creates a signed admission token for the given user and event.
-func (t *Tokenizer) Generate(userID, eventID string) (string, error) {
+func (t *Tokenizer) Generate(customerID, eventID string) (string, error) {
 	payload := claims{
-		UserID:    userID,
-		EventID:   eventID,
-		ExpiresAt: time.Now().Add(t.ttl),
+		CustomerID: customerID,
+		EventID:    eventID,
+		ExpiresAt:  time.Now().Add(t.ttl),
 	}
 
 	payloadBytes, err := json.Marshal(payload)
@@ -61,7 +61,7 @@ func (t *Tokenizer) Generate(userID, eventID string) (string, error) {
 
 // Verify parses and validates a token, returning the user and event IDs
 // if the token is valid and unexpired.
-func (t *Tokenizer) Verify(token string) (userID, eventID string, err error) {
+func (t *Tokenizer) Verify(token string) (customerID, eventID string, err error) {
 	parts := strings.SplitN(token, ".", 2)
 	if len(parts) != 2 {
 		return "", "", ErrTokenInvalid
@@ -90,7 +90,7 @@ func (t *Tokenizer) Verify(token string) (userID, eventID string, err error) {
 		return "", "", ErrTokenExpired
 	}
 
-	return payload.UserID, payload.EventID, nil
+	return payload.CustomerID, payload.EventID, nil
 }
 
 // sign computes an HMAC-SHA256 signature of the given data.

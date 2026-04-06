@@ -56,6 +56,14 @@ linters:
           - govet
           - errorlint
           - exhaustive
+
+      - path: 'testhelpers/'
+        linters:
+          - errcheck
+          - gocritic
+          - gosec
+          - govet
+          - staticcheck
       
       # Exclude linting for generated or temporary files
       - path: '(^|/)tmp/'

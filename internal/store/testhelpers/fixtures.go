@@ -17,21 +17,56 @@ func NewTestDB(pool *pgxpool.Pool) *postgres.DB {
 	return postgres.NewDB(pool)
 }
 
-// SeedEvent inserts a test event and returns it.
-// Callers can override fields by modifying the returned struct
-// before using it in assertions.
+func SeedOrganizer(ctx context.Context, t *testing.T, pool *pgxpool.Pool) *domain.Organizer {
+	t.Helper()
+
+	db := NewTestDB(pool)
+	store := postgres.NewOrganizerStore(db)
+
+	organizer := &domain.Organizer{
+		ID:           uuid.NewString(),
+		Name:         "Test Organizer",
+		Email:        uuid.NewString() + "@organizer.com",
+		PasswordHash: "$2a$10$fakehashfortest",
+		CreatedAt:    time.Now(),
+	}
+
+	if err := store.Create(ctx, organizer); err != nil {
+		t.Fatalf("seeding organizer: %v", err)
+	}
+
+	return organizer
+}
+
+func SeedCustomer(ctx context.Context, t *testing.T, pool *pgxpool.Pool) *domain.Customer {
+	t.Helper()
+
+	db := NewTestDB(pool)
+	store := postgres.NewCustomerStore(db)
+
+	customer := &domain.Customer{
+		ID:        uuid.NewString(),
+		Email:     uuid.NewString() + "@customer.com",
+		CreatedAt: time.Now(),
+	}
+
+	if err := store.Create(ctx, customer); err != nil {
+		t.Fatalf("seeding customer: %v", err)
+	}
+
+	return customer
+}
+
 func SeedEvent(ctx context.Context, t *testing.T, pool *pgxpool.Pool) *domain.Event {
 	t.Helper()
 
-	// Create the organizer first so the foreign key is satisfied
-	organizerID := SeedUser(ctx, t, pool)
-
+	organizer := SeedOrganizer(ctx, t, pool)
 	db := NewTestDB(pool)
 	store := postgres.NewEventStore(db)
 
 	event := &domain.Event{
 		ID:             uuid.NewString(),
-		OrganizerID:    organizerID,
+		OrganizerID:    organizer.ID,
 		Name:           "Test Event",
 		TotalInventory: 100,
 		Price:          500000,
@@ -49,6 +84,28 @@ func SeedEvent(ctx context.Context, t *testing.T, pool *pgxpool.Pool) *domain.Ev
 	return event
 }
 
+func SeedClaim(ctx context.Context, t *testing.T, pool *pgxpool.Pool, customerID, eventID string) *domain.Claim {
+	t.Helper()
+
+	db := NewTestDB(pool)
+	store := postgres.NewClaimStore(db)
+
+	claim := &domain.Claim{
+		ID:         uuid.NewString(),
+		EventID:    eventID,
+		CustomerID: customerID,
+		Status:     domain.ClaimStatusClaimed,
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
+	}
+
+	if err := store.Create(ctx, claim); err != nil {
+		t.Fatalf("seeding claim: %v", err)
+	}
+
+	return claim
+}
+
 // SeedActiveEvent inserts a test event in ACTIVE status.
 func SeedActiveEvent(ctx context.Context, t *testing.T, pool *pgxpool.Pool) *domain.Event {
 	t.Helper()
@@ -64,44 +121,4 @@ func SeedActiveEvent(ctx context.Context, t *testing.T, pool *pgxpool.Pool) *dom
 	}
 
 	return event
-}
-
-// SeedUser inserts a test user and returns their ID.
-func SeedUser(ctx context.Context, t *testing.T, pool *pgxpool.Pool) string {
-	t.Helper()
-
-	userID := uuid.NewString()
-	_, err := pool.Exec(ctx,
-		"INSERT INTO users (id, email) VALUES ($1, $2)",
-		userID,
-		userID+"@test.com",
-	)
-	if err != nil {
-		t.Fatalf("seeding user: %v", err)
-	}
-
-	return userID
-}
-
-// SeedClaim inserts a test claim in CLAIMED status.
-func SeedClaim(ctx context.Context, t *testing.T, pool *pgxpool.Pool, userID, eventID string) *domain.Claim {
-	t.Helper()
-
-	db := NewTestDB(pool)
-	store := postgres.NewClaimStore(db)
-
-	claim := &domain.Claim{
-		ID:        uuid.NewString(),
-		EventID:   eventID,
-		UserID:    userID,
-		Status:    domain.ClaimStatusClaimed,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	}
-
-	if err := store.Create(ctx, claim); err != nil {
-		t.Fatalf("seeding claim: %v", err)
-	}
-
-	return claim
 }

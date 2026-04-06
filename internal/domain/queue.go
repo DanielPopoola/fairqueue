@@ -12,22 +12,22 @@ const (
 	QueueEntryStatusAbandoned QueueEntryStatus = "ABANDONED"
 )
 
-// QueueEntryTTL is how long a user can wait in queue before
+// QueueEntryTTL is how long a customer can wait in queue before
 // their entry expires. After this, they must rejoin.
 const QueueEntryTTL = 2 * time.Hour
 
-// AdmissionWindowTTL is how long an admitted user has to claim
+// AdmissionWindowTTL is how long an admitted customer has to claim
 // before their admission token expires.
 const AdmissionWindowTTL = 5 * time.Minute
 
 type QueueEntry struct {
 	ID         string
 	EventID    string
-	UserID     string
-	Position   int64 // ZRANK from Redis, populated at load time
+	CustomerID string
+	Position   int64
 	Status     QueueEntryStatus
 	JoinedAt   time.Time
-	AdmittedAt *time.Time // nil until admitted
+	AdmittedAt *time.Time
 	UpdatedAt  time.Time
 }
 
@@ -63,7 +63,7 @@ func (q *QueueEntry) Admit() error {
 }
 
 // Complete transitions the entry from ADMITTED to COMPLETED.
-// Called when the user successfully claims a ticket.
+// Called when the customer successfully claims a ticket.
 func (q *QueueEntry) Complete() error {
 	if q.Status != QueueEntryStatusAdmitted {
 		return ErrInvalidTransition
@@ -74,7 +74,7 @@ func (q *QueueEntry) Complete() error {
 }
 
 // Abandon transitions the entry from WAITING to ABANDONED.
-// Called when the user explicitly leaves the queue.
+// Called when the customer explicitly leaves the queue.
 func (q *QueueEntry) Abandon() error {
 	if q.Status != QueueEntryStatusWaiting {
 		return ErrInvalidTransition

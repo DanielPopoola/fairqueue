@@ -41,23 +41,23 @@ func TestClaimStore_Create_DuplicateActiveClaim(t *testing.T) {
 	testhelpers.Truncate(testCtx, t, testPool) // clean slate
 
 	event := testhelpers.SeedActiveEvent(testCtx, t, testPool)
-	userID := testhelpers.SeedUser(testCtx, t, testPool)
+	customer := testhelpers.SeedCustomer(testCtx, t, testPool)
 
 	// First claim succeeds
-	testhelpers.SeedClaim(testCtx, t, testPool, userID, event.ID)
+	testhelpers.SeedClaim(testCtx, t, testPool, customer.ID, event.ID)
 
-	// Second claim for same user + event should fail —
-	// partial unique index on (user_id, event_id) WHERE status = 'CLAIMED'
+	// Second claim for same customer + event should fail —
+	// partial unique index on (customer_id, event_id) WHERE status = 'CLAIMED'
 	db := postgres.NewDB(testPool)
 	store := postgres.NewClaimStore(db)
 
 	duplicate := &domain.Claim{
-		ID:        uuid.NewString(),
-		EventID:   event.ID,
-		UserID:    userID,
-		Status:    domain.ClaimStatusClaimed,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		ID:         uuid.NewString(),
+		EventID:    event.ID,
+		CustomerID: customer.ID,
+		Status:     domain.ClaimStatusClaimed,
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
 	}
 
 	err := store.Create(testCtx, duplicate)
@@ -70,28 +70,28 @@ func TestClaimStore_Create_AllowsClaimAfterRelease(t *testing.T) {
 	testhelpers.Truncate(testCtx, t, testPool) // clean slate
 
 	event := testhelpers.SeedActiveEvent(testCtx, t, testPool)
-	userID := testhelpers.SeedUser(testCtx, t, testPool)
+	customer := testhelpers.SeedCustomer(testCtx, t, testPool)
 
 	db := postgres.NewDB(testPool)
 	store := postgres.NewClaimStore(db)
 
 	// First claim
-	first := testhelpers.SeedClaim(testCtx, t, testPool, userID, event.ID)
+	first := testhelpers.SeedClaim(testCtx, t, testPool, customer.ID, event.ID)
 
 	// Release it
 	if err := store.UpdateStatus(testCtx, first.ID, domain.ClaimStatusReleased, domain.ClaimStatusClaimed); err != nil {
 		t.Fatalf("releasing claim: %v", err)
 	}
 
-	// Second claim for same user + event should now succeed —
+	// Second claim for same customer + event should now succeed —
 	// partial index ignores RELEASED rows
 	second := &domain.Claim{
-		ID:        uuid.NewString(),
-		EventID:   event.ID,
-		UserID:    userID,
-		Status:    domain.ClaimStatusClaimed,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		ID:         uuid.NewString(),
+		EventID:    event.ID,
+		CustomerID: customer.ID,
+		Status:     domain.ClaimStatusClaimed,
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
 	}
 
 	if err := store.Create(testCtx, second); err != nil {
@@ -103,8 +103,8 @@ func TestClaimStore_UpdateStatus_WrongExpectedStatus(t *testing.T) {
 	testhelpers.Truncate(testCtx, t, testPool) // clean slate
 
 	event := testhelpers.SeedActiveEvent(testCtx, t, testPool)
-	userID := testhelpers.SeedUser(testCtx, t, testPool)
-	claim := testhelpers.SeedClaim(testCtx, t, testPool, userID, event.ID)
+	customer := testhelpers.SeedCustomer(testCtx, t, testPool)
+	claim := testhelpers.SeedClaim(testCtx, t, testPool, customer.ID, event.ID)
 
 	db := postgres.NewDB(testPool)
 	store := postgres.NewClaimStore(db)
@@ -134,13 +134,13 @@ func TestClaimStore_GetExpiredClaims(t *testing.T) {
 	store := postgres.NewClaimStore(db)
 
 	// Insert an expired claim by backdating created_at
-	expiredUserID := testhelpers.SeedUser(testCtx, t, testPool)
+	expiredCustomer := testhelpers.SeedCustomer(testCtx, t, testPool)
 	_, err := testPool.Exec(testCtx, `
-		INSERT INTO claims (id, event_id, user_id, status, created_at, updated_at)
+		INSERT INTO claims (id, event_id, customer_id, status, created_at, updated_at)
 		VALUES ($1, $2, $3, 'CLAIMED', $4, $4)`,
 		uuid.NewString(),
 		event.ID,
-		expiredUserID,
+		expiredCustomer.ID,
 		time.Now().Add(-(domain.ClaimTTL + time.Minute)),
 	)
 	if err != nil {
@@ -148,8 +148,8 @@ func TestClaimStore_GetExpiredClaims(t *testing.T) {
 	}
 
 	// Insert a fresh claim — should NOT appear in expired results
-	freshUserID := testhelpers.SeedUser(testCtx, t, testPool)
-	testhelpers.SeedClaim(testCtx, t, testPool, freshUserID, event.ID)
+	freshCustomer := testhelpers.SeedCustomer(testCtx, t, testPool)
+	testhelpers.SeedClaim(testCtx, t, testPool, freshCustomer.ID, event.ID)
 
 	expired, err := store.GetExpiredClaims(testCtx)
 	if err != nil {
@@ -159,7 +159,7 @@ func TestClaimStore_GetExpiredClaims(t *testing.T) {
 	if len(expired) != 1 {
 		t.Fatalf("expected 1 expired claim, got %d", len(expired))
 	}
-	if expired[0].UserID != expiredUserID {
-		t.Fatalf("expected expired claim for user %s, got %s", expiredUserID, expired[0].UserID)
+	if expired[0].CustomerID != expiredCustomer.ID {
+		t.Fatalf("expected expired claim for customer %s, got %s", expiredCustomer.ID, expired[0].CustomerID)
 	}
 }

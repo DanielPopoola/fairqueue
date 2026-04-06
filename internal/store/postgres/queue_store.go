@@ -21,7 +21,7 @@ func NewQueueStore(db *DB) *QueueStore {
 func (s *QueueStore) Create(ctx context.Context, entry *domain.QueueEntry) error {
 	query := `
         INSERT INTO queue_entries (
-            id, event_id, user_id, status,
+            id, event_id, customer_id, status,
             joined_at, admitted_at, updated_at
         ) VALUES ($1, $2, $3, $4, $5, $6, $7)
 	`
@@ -29,7 +29,7 @@ func (s *QueueStore) Create(ctx context.Context, entry *domain.QueueEntry) error
 	_, err := s.db.Pool.Exec(ctx, query,
 		entry.ID,
 		entry.EventID,
-		entry.UserID,
+		entry.CustomerID,
 		entry.Status,
 		entry.JoinedAt,
 		entry.AdmittedAt,
@@ -43,7 +43,7 @@ func (s *QueueStore) Create(ctx context.Context, entry *domain.QueueEntry) error
 
 func (s *QueueStore) GetByID(ctx context.Context, id string) (*domain.QueueEntry, error) {
 	query := `
-        SELECT id, event_id, user_id, status,
+        SELECT id, event_id, customer_id, status,
                joined_at, admitted_at, updated_at
         FROM queue_entries
         WHERE id = $1`
@@ -52,7 +52,7 @@ func (s *QueueStore) GetByID(ctx context.Context, id string) (*domain.QueueEntry
 	err := s.db.Pool.QueryRow(ctx, query, id).Scan(
 		&q.ID,
 		&q.EventID,
-		&q.UserID,
+		&q.CustomerID,
 		&q.Status,
 		&q.JoinedAt,
 		&q.AdmittedAt,
@@ -67,20 +67,20 @@ func (s *QueueStore) GetByID(ctx context.Context, id string) (*domain.QueueEntry
 	return &q, nil
 }
 
-func (s *QueueStore) GetByUserAndEvent(ctx context.Context, userID, eventID string) (*domain.QueueEntry, error) {
+func (s *QueueStore) GetByCustomerAndEvent(ctx context.Context, customerID, eventID string) (*domain.QueueEntry, error) {
 	query := `
-        SELECT id, event_id, user_id, status,
+        SELECT id, event_id, customer_id, status,
                joined_at, admitted_at, updated_at
         FROM queue_entries
-        WHERE user_id = $1
+        WHERE customer_id = $1
         AND event_id = $2
         AND status IN ('WAITING', 'ADMITTED')`
 
 	var q domain.QueueEntry
-	err := s.db.Pool.QueryRow(ctx, query, userID, eventID).Scan(
+	err := s.db.Pool.QueryRow(ctx, query, customerID, eventID).Scan(
 		&q.ID,
 		&q.EventID,
-		&q.UserID,
+		&q.CustomerID,
 		&q.Status,
 		&q.JoinedAt,
 		&q.AdmittedAt,
@@ -90,14 +90,14 @@ func (s *QueueStore) GetByUserAndEvent(ctx context.Context, userID, eventID stri
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, domain.ErrQueueEntryNotFound
 		}
-		return nil, fmt.Errorf("getting queue entry by user and event: %w", err)
+		return nil, fmt.Errorf("getting queue entry by customer and event: %w", err)
 	}
 	return &q, nil
 }
 
 func (s *QueueStore) GetActiveByEvent(ctx context.Context, eventID string) ([]domain.QueueEntry, error) {
 	query := `
-        SELECT id, event_id, user_id, status,
+        SELECT id, event_id, customer_id, status,
                joined_at, admitted_at, updated_at
         FROM queue_entries
         WHERE event_id = $1
@@ -119,7 +119,7 @@ func (s *QueueStore) GetStaleEntries(
 	admittedOlderThan time.Duration,
 ) ([]domain.QueueEntry, error) {
 	query := `
-        SELECT id, event_id, user_id, status,
+        SELECT id, event_id, customer_id, status,
                joined_at, admitted_at, updated_at
         FROM queue_entries
         WHERE (
@@ -192,7 +192,7 @@ func scanQueueEntries(rows pgx.Rows) ([]domain.QueueEntry, error) {
 	results, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (domain.QueueEntry, error) {
 		var q domain.QueueEntry
 		err := row.Scan(
-			&q.ID, &q.EventID, &q.UserID, &q.Status, &q.JoinedAt, &q.AdmittedAt, &q.UpdatedAt,
+			&q.ID, &q.EventID, &q.CustomerID, &q.Status, &q.JoinedAt, &q.AdmittedAt, &q.UpdatedAt,
 		)
 		return q, err
 	})

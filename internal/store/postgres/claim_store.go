@@ -21,14 +21,14 @@ func NewClaimStore(db *DB) *ClaimStore {
 func (s *ClaimStore) Create(ctx context.Context, claim *domain.Claim) error {
 	query := `
 		INSERT INTO claims (
-			id, event_id, user_id, status, created_at, updated_at
+			id, event_id, customer_id, status, created_at, updated_at
 		) VALUES ($1, $2, $3, $4, $5, $6)
 	`
 
 	_, err := s.db.Pool.Exec(ctx, query,
 		claim.ID,
 		claim.EventID,
-		claim.UserID,
+		claim.CustomerID,
 		claim.Status,
 		claim.CreatedAt,
 		claim.UpdatedAt,
@@ -42,7 +42,7 @@ func (s *ClaimStore) Create(ctx context.Context, claim *domain.Claim) error {
 
 func (s *ClaimStore) GetByID(ctx context.Context, id string) (*domain.Claim, error) {
 	query := `
-		SELECT id, event_id, user_id, status, created_at, updated_at
+		SELECT id, event_id, customer_id, status, created_at, updated_at
 		FROM claims
 		WHERE id = $1
 	`
@@ -51,7 +51,7 @@ func (s *ClaimStore) GetByID(ctx context.Context, id string) (*domain.Claim, err
 	err := s.db.Pool.QueryRow(ctx, query, id).Scan(
 		&c.ID,
 		&c.EventID,
-		&c.UserID,
+		&c.CustomerID,
 		&c.Status,
 		&c.CreatedAt,
 		&c.UpdatedAt,
@@ -66,20 +66,20 @@ func (s *ClaimStore) GetByID(ctx context.Context, id string) (*domain.Claim, err
 	return &c, nil
 }
 
-func (s *ClaimStore) GetByUserAndEvent(ctx context.Context, userID, eventID string) (*domain.Claim, error) {
+func (s *ClaimStore) GetByCustomerAndEvent(ctx context.Context, customerID, eventID string) (*domain.Claim, error) {
 	query := `
-        SELECT id, event_id, user_id, status, created_at, updated_at
+        SELECT id, event_id, customer_id, status, created_at, updated_at
         FROM claims
-        WHERE user_id = $1
+        WHERE customer_id = $1
         AND event_id = $2
         AND status = 'CLAIMED'
 	`
 
 	var c domain.Claim
-	err := s.db.Pool.QueryRow(ctx, query, userID, eventID).Scan(
+	err := s.db.Pool.QueryRow(ctx, query, customerID, eventID).Scan(
 		&c.ID,
 		&c.EventID,
-		&c.UserID,
+		&c.CustomerID,
 		&c.Status,
 		&c.CreatedAt,
 		&c.UpdatedAt,
@@ -88,14 +88,14 @@ func (s *ClaimStore) GetByUserAndEvent(ctx context.Context, userID, eventID stri
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, domain.ErrClaimNotFound
 		}
-		return nil, fmt.Errorf("getting claim by user and event: %w", err)
+		return nil, fmt.Errorf("getting claim by customer and event: %w", err)
 	}
 	return &c, nil
 }
 
 func (s *ClaimStore) GetExpiredClaims(ctx context.Context) ([]domain.Claim, error) {
 	query := `
-		SELECT id, event_id, user_id, status, created_at, updated_at
+		SELECT id, event_id, customer_id, status, created_at, updated_at
         FROM claims
         WHERE status = 'CLAIMED'
         AND created_at < $1

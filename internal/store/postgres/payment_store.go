@@ -21,8 +21,8 @@ func NewPaymentStore(db *DB) *PaymentStore {
 func (s *PaymentStore) Create(ctx context.Context, payment *domain.Payment) error {
 	query := `
         INSERT INTO payments (
-            id, claim_id, user_id, amount_kobo,
-            status, paystack_reference, failure_reason,
+            id, claim_id, customer_id, amount_kobo,
+            status, reference, failure_reason,
             created_at, updated_at
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		`
@@ -30,8 +30,8 @@ func (s *PaymentStore) Create(ctx context.Context, payment *domain.Payment) erro
 	_, err := s.db.Pool.Exec(ctx, query,
 		payment.ID,
 		payment.ClaimID,
-		payment.UserID,
-		payment.AmountKobo,
+		payment.CustomerID,
+		payment.Amount,
 		payment.Status,
 		payment.Reference,
 		payment.FailureReason,
@@ -46,8 +46,8 @@ func (s *PaymentStore) Create(ctx context.Context, payment *domain.Payment) erro
 
 func (s *PaymentStore) GetByID(ctx context.Context, id string) (*domain.Payment, error) {
 	return s.scanOne(ctx, `
-        SELECT id, claim_id, user_id, amount_kobo,
-               status, paystack_reference, failure_reason,
+        SELECT id, claim_id, customer_id, amount_kobo,
+               status, reference, failure_reason,
                authorization_url, created_at, updated_at
         FROM payments
         WHERE id = $1`, id)
@@ -55,8 +55,8 @@ func (s *PaymentStore) GetByID(ctx context.Context, id string) (*domain.Payment,
 
 func (s *PaymentStore) GetByClaimID(ctx context.Context, claimID string) (*domain.Payment, error) {
 	return s.scanOne(ctx, `
-        SELECT id, claim_id, user_id, amount_kobo,
-               status, paystack_reference, failure_reason,
+        SELECT id, claim_id, customer_id, amount_kobo,
+               status, reference, failure_reason,
                authorization_url, created_at, updated_at
         FROM payments
         WHERE claim_id = $1`, claimID)
@@ -64,16 +64,16 @@ func (s *PaymentStore) GetByClaimID(ctx context.Context, claimID string) (*domai
 
 func (s *PaymentStore) GetByReference(ctx context.Context, reference string) (*domain.Payment, error) {
 	return s.scanOne(ctx, `
-        SELECT id, claim_id, user_id, amount_kobo,
-               status, paystack_reference, failure_reason,
+        SELECT id, claim_id, customer_id, amount_kobo,
+               status, reference, failure_reason,
                authorization_url, created_at, updated_at
         FROM payments
-        WHERE paystack_reference = $1`, reference)
+        WHERE reference = $1`, reference)
 }
 
 func (s *PaymentStore) GetStalePayments(ctx context.Context, olderThan time.Duration) ([]domain.Payment, error) {
 	query := `
-        SELECT id, claim_id, user_id, amount_kobo,
+        SELECT id, claim_id, customer_id, amount_kobo,
                status, reference, failure_reason,
                authorization_url, created_at, updated_at
         FROM payments
@@ -161,8 +161,8 @@ func (s *PaymentStore) scanOne(ctx context.Context, query string, arg any) (*dom
 	err := s.db.Pool.QueryRow(ctx, query, arg).Scan(
 		&p.ID,
 		&p.ClaimID,
-		&p.UserID,
-		&p.AmountKobo,
+		&p.CustomerID,
+		&p.Amount,
 		&p.Status,
 		&p.Reference,
 		&p.FailureReason,

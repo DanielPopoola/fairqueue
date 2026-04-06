@@ -19,7 +19,8 @@ func Truncate(ctx context.Context, t *testing.T, pool *pgxpool.Pool) {
 			queue_entries,
 			claims,
 			events,
-			users
+			customers,
+			organizers
 		RESTART IDENTITY CASCADE
 	`)
 	if err != nil {

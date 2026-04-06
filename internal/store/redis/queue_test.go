@@ -19,13 +19,13 @@ func TestQueueStore_Join_DuplicatePrevented(t *testing.T) {
 	store := redisstore.NewQueueStore(client)
 
 	eventID := "event-1"
-	userID := "user-1"
+	customerID := "customer-1"
 
-	if err := store.Join(testCtx, eventID, userID); err != nil {
+	if err := store.Join(testCtx, eventID, customerID); err != nil {
 		t.Fatalf("first join: %v", err)
 	}
 
-	if err := store.Join(testCtx, eventID, userID); err != domain.ErrAlreadyInQueue {
+	if err := store.Join(testCtx, eventID, customerID); err != domain.ErrAlreadyInQueue {
 		t.Fatalf("expected ErrAlreadyInQueue, got: %v", err)
 	}
 }
@@ -37,15 +37,15 @@ func TestQueueStore_Join_AdmittedUserCannotRejoin(t *testing.T) {
 	store := redisstore.NewQueueStore(client)
 
 	eventID := "event-2"
-	userID := "user-2"
+	customerID := "customer-2"
 
 	// Join and admit
-	store.Join(testCtx, eventID, userID)
+	store.Join(testCtx, eventID, customerID)
 	store.AdmitNextBatch(testCtx, eventID, 1)
 
 	// User is now in admitted ZSET — joining again should fail
-	if err := store.Join(testCtx, eventID, userID); err != domain.ErrAlreadyInQueue {
-		t.Fatalf("expected ErrAlreadyInQueue for admitted user, got: %v", err)
+	if err := store.Join(testCtx, eventID, customerID); err != domain.ErrAlreadyInQueue {
+		t.Fatalf("expected ErrAlreadyInQueue for admitted customer, got: %v", err)
 	}
 }
 
@@ -57,15 +57,15 @@ func TestQueueStore_AdmitNextBatch_AtomicUnderConcurrency(t *testing.T) {
 
 	eventID := "event-3"
 
-	// Add 20 users to the waiting queue
+	// Add 20 customers to the waiting queue
 	for i := range 20 {
-		userID := fmt.Sprintf("user-%d", i)
-		if err := store.Join(testCtx, eventID, userID); err != nil {
-			t.Fatalf("joining user %d: %v", i, err)
+		customerID := fmt.Sprintf("customer-%d", i)
+		if err := store.Join(testCtx, eventID, customerID); err != nil {
+			t.Fatalf("joining customer %d: %v", i, err)
 		}
 	}
 
-	// Two goroutines both try to admit 10 users simultaneously
+	// Two goroutines both try to admit 10 customers simultaneously
 	var wg sync.WaitGroup
 	results := make([][]string, 2)
 
@@ -84,20 +84,20 @@ func TestQueueStore_AdmitNextBatch_AtomicUnderConcurrency(t *testing.T) {
 
 	wg.Wait()
 
-	// Combine results and check no user appears twice
+	// Combine results and check no customer appears twice
 	seen := make(map[string]bool)
 	for _, batch := range results {
-		for _, userID := range batch {
-			if seen[userID] {
-				t.Fatalf("user %s admitted twice — Lua script is not atomic", userID)
+		for _, customerID := range batch {
+			if seen[customerID] {
+				t.Fatalf("customer %s admitted twice — Lua script is not atomic", customerID)
 			}
-			seen[userID] = true
+			seen[customerID] = true
 		}
 	}
 
-	// All 20 users should have been admitted exactly once
+	// All 20 customers should have been admitted exactly once
 	if len(seen) != 20 {
-		t.Fatalf("expected 20 unique admitted users, got %d", len(seen))
+		t.Fatalf("expected 20 unique admitted customers, got %d", len(seen))
 	}
 }
 
@@ -109,39 +109,39 @@ func TestQueueStore_EvictExpiredAdmitted(t *testing.T) {
 
 	eventID := "event-4"
 
-	// Add and admit two users
-	store.Join(testCtx, eventID, "user-fresh")
-	store.Join(testCtx, eventID, "user-expired")
+	// Add and admit two customers
+	store.Join(testCtx, eventID, "customer-fresh")
+	store.Join(testCtx, eventID, "customer-expired")
 	store.AdmitNextBatch(testCtx, eventID, 2)
 
-	// Backdate user-expired's admission score in Redis
+	// Backdate customer-expired's admission score in Redis
 	// by directly setting a score older than the TTL
 	expiredScore := float64(time.Now().Add(-10 * time.Minute).UnixNano())
 	testClient.ZAdd(testCtx, fmt.Sprintf("admitted:%s", eventID), redis.Z{
 		Score:  expiredScore,
-		Member: "user-expired",
+		Member: "customer-expired",
 	})
 
-	// Evict with 5 minute TTL — only user-expired should be removed
+	// Evict with 5 minute TTL — only customer-expired should be removed
 	evicted, err := store.EvictExpiredAdmitted(testCtx, eventID, 5*time.Minute)
 	if err != nil {
 		t.Fatalf("evicting: %v", err)
 	}
 
 	if len(evicted) != 1 {
-		t.Fatalf("expected 1 evicted user, got %d", len(evicted))
+		t.Fatalf("expected 1 evicted customer, got %d", len(evicted))
 	}
-	if evicted[0] != "user-expired" {
-		t.Fatalf("expected user-expired to be evicted, got %s", evicted[0])
+	if evicted[0] != "customer-expired" {
+		t.Fatalf("expected customer-expired to be evicted, got %s", evicted[0])
 	}
 
-	// user-fresh should still be admitted
-	admitted, err := store.IsAdmitted(testCtx, eventID, "user-fresh")
+	// customer-fresh should still be admitted
+	admitted, err := store.IsAdmitted(testCtx, eventID, "customer-fresh")
 	if err != nil {
 		t.Fatalf("checking admission: %v", err)
 	}
 	if !admitted {
-		t.Fatal("expected user-fresh to still be admitted")
+		t.Fatal("expected customer-fresh to still be admitted")
 	}
 }
 

@@ -15,7 +15,7 @@ const (
 	admittedKeyFmt = "admitted:%s" // admitted:{event_id}
 )
 
-// joinScript atomically checks both ZSETs and adds the user
+// joinScript atomically checks both ZSETs and adds the customer
 // to the waiting queue only if they are not already present.
 //
 // Returns:
@@ -26,25 +26,25 @@ const (
 var joinScript = redis.NewScript(`
 	local waiting  = KEYS[1]
 	local admitted = KEYS[2]
-	local userID   = ARGV[1]
+	local customerID   = ARGV[1]
 	local score    = tonumber(ARGV[2])
 
-	if redis.call("ZSCORE", waiting, userID) ~= false then
+	if redis.call("ZSCORE", waiting, customerID) ~= false then
 		return 0
 	end
 
-	if redis.call("ZSCORE", admitted, userID) ~= false then
+	if redis.call("ZSCORE", admitted, customerID) ~= false then
 		return 1
 	end
 
-	redis.call("ZADD", waiting, score, userID)
+	redis.call("ZADD", waiting, score, customerID)
 	return 2
 `)
 
-// admitBatchScript atomically moves the next n users from
+// admitBatchScript atomically moves the next n customers from
 // waiting to admitted in a single Redis operation.
 //
-// Returns a flat list of admitted userIDs,
+// Returns a flat list of admitted customerIDs,
 // or an empty list if the waiting queue is empty.
 var admitBatchScript = redis.NewScript(`
 	local waiting   = KEYS[1]
@@ -58,17 +58,17 @@ var admitBatchScript = redis.NewScript(`
 		return {}
 	end
 
-	local userIDs = {}
+	local customerIDs = {}
 	local zaddArgs = {}
 
 	-- ZPOPMIN returns alternating member/score pairs:
-	-- results[1]=userID, results[2]=score, results[3]=userID ...
-	-- We only need the userIDs (odd indices).
+	-- results[1]=customerID, results[2]=score, results[3]=customerID ...
+	-- We only need the customerIDs (odd indices).
 	for i = 1, #results, 2 do
-		local userID = results[i]
-		table.insert(userIDs, userID)
+		local customerID = results[i]
+		table.insert(customerIDs, customerID)
 		table.insert(zaddArgs, admScore)
-		table.insert(zaddArgs, userID)
+		table.insert(zaddArgs, customerID)
 	end
 
 	-- Unpack zaddArgs as variadic args to ZADD.
@@ -76,11 +76,11 @@ var admitBatchScript = redis.NewScript(`
 	-- so we use unpack() to expand the table.
 	redis.call("ZADD", admitted, unpack(zaddArgs))
 
-	return userIDs
+	return customerIDs
 `)
 
-// evictExpiredScript atomically finds and removes users whose
-// admission window has expired, returning their userIDs.
+// evictExpiredScript atomically finds and removes customers whose
+// admission window has expired, returning their customerIDs.
 //
 // KEYS[1] → admitted:{event_id}
 // ARGV[1] → cutoff timestamp (nanoseconds) — anyone admitted
@@ -120,15 +120,15 @@ func (s *QueueStore) admittedKey(eventID string) string {
 	return fmt.Sprintf(admittedKeyFmt, eventID)
 }
 
-// Join atomically checks both ZSETs and adds the user to the
+// Join atomically checks both ZSETs and adds the customer to the
 // waiting queue if they are not already present in either.
-func (s *QueueStore) Join(ctx context.Context, eventID, userID string) error {
+func (s *QueueStore) Join(ctx context.Context, eventID, customerID string) error {
 	keys := []string{
 		s.waitingKey(eventID),
 		s.admittedKey(eventID),
 	}
 	args := []any{
-		userID,
+		customerID,
 		time.Now().UnixNano(),
 	}
 
@@ -147,9 +147,9 @@ func (s *QueueStore) Join(ctx context.Context, eventID, userID string) error {
 	}
 }
 
-// AdmitNextBatch atomically moves the next n longest-waiting users
+// AdmitNextBatch atomically moves the next n longest-waiting customers
 // from the waiting ZSET to the admitted ZSET.
-// Returns the userIDs of admitted users so the service layer can
+// Returns the customerIDs of admitted customers so the service layer can
 // generate tokens and notify them via WebSocket.
 func (s *QueueStore) AdmitNextBatch(ctx context.Context, eventID string, n int64) ([]string, error) {
 	keys := []string{
@@ -172,10 +172,10 @@ func (s *QueueStore) AdmitNextBatch(ctx context.Context, eventID string, n int64
 	return res, nil
 }
 
-// GetPosition returns the zero-based position of a user in the waiting queue.
-// Returns -1 if the user is not in the waiting queue.
-func (s *QueueStore) GetPosition(ctx context.Context, eventID, userID string) (int64, error) {
-	pos, err := s.client.rdb.ZRank(ctx, s.waitingKey(eventID), userID).Result()
+// GetPosition returns the zero-based position of a customer in the waiting queue.
+// Returns -1 if the customer is not in the waiting queue.
+func (s *QueueStore) GetPosition(ctx context.Context, eventID, customerID string) (int64, error) {
+	pos, err := s.client.rdb.ZRank(ctx, s.waitingKey(eventID), customerID).Result()
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
 			return -1, nil
@@ -185,9 +185,9 @@ func (s *QueueStore) GetPosition(ctx context.Context, eventID, userID string) (i
 	return pos, nil
 }
 
-// IsAdmitted returns true if the user is currently in the admitted ZSET.
-func (s *QueueStore) IsAdmitted(ctx context.Context, eventID, userID string) (bool, error) {
-	_, err := s.client.rdb.ZScore(ctx, s.admittedKey(eventID), userID).Result()
+// IsAdmitted returns true if the customer is currently in the admitted ZSET.
+func (s *QueueStore) IsAdmitted(ctx context.Context, eventID, customerID string) (bool, error) {
+	_, err := s.client.rdb.ZScore(ctx, s.admittedKey(eventID), customerID).Result()
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
 			return false, nil
@@ -197,26 +197,26 @@ func (s *QueueStore) IsAdmitted(ctx context.Context, eventID, userID string) (bo
 	return true, nil
 }
 
-// RemoveAdmitted removes a user from the admitted ZSET.
-// Called when a user successfully claims or their admission window expires.
-func (s *QueueStore) RemoveAdmitted(ctx context.Context, eventID, userID string) error {
-	if err := s.client.rdb.ZRem(ctx, s.admittedKey(eventID), userID).Err(); err != nil {
+// RemoveAdmitted removes a customer from the admitted ZSET.
+// Called when a customer successfully claims or their admission window expires.
+func (s *QueueStore) RemoveAdmitted(ctx context.Context, eventID, customerID string) error {
+	if err := s.client.rdb.ZRem(ctx, s.admittedKey(eventID), customerID).Err(); err != nil {
 		return fmt.Errorf("removing from admitted: %w", err)
 	}
 	return nil
 }
 
-// RemoveWaiting removes a user from the waiting ZSET.
-// Called when a user explicitly abandons the queue.
-func (s *QueueStore) RemoveWaiting(ctx context.Context, eventID, userID string) error {
-	if err := s.client.rdb.ZRem(ctx, s.waitingKey(eventID), userID).Err(); err != nil {
+// RemoveWaiting removes a customer from the waiting ZSET.
+// Called when a customer explicitly abandons the queue.
+func (s *QueueStore) RemoveWaiting(ctx context.Context, eventID, customerID string) error {
+	if err := s.client.rdb.ZRem(ctx, s.waitingKey(eventID), customerID).Err(); err != nil {
 		return fmt.Errorf("removing from waiting: %w", err)
 	}
 	return nil
 }
 
-// EvictExpiredAdmitted atomically finds and removes users whose
-// admission window has expired. Returns their userIDs so the
+// EvictExpiredAdmitted atomically finds and removes customers whose
+// admission window has expired. Returns their customerIDs so the
 // worker can update Postgres and notify them.
 func (s *QueueStore) EvictExpiredAdmitted(ctx context.Context, eventID string, admissionTTL time.Duration) ([]string, error) {
 	cutoff := fmt.Sprintf("%d", time.Now().Add(-admissionTTL).UnixNano())
@@ -231,13 +231,13 @@ func (s *QueueStore) EvictExpiredAdmitted(ctx context.Context, eventID string, a
 		if errors.Is(err, redis.Nil) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("evicting expired admitted users: %w", err)
+		return nil, fmt.Errorf("evicting expired admitted customers: %w", err)
 	}
 
 	return res, nil
 }
 
-// WaitingCount returns the number of users currently waiting.
+// WaitingCount returns the number of customers currently waiting.
 // Used by the admission worker to decide batch size.
 func (s *QueueStore) WaitingCount(ctx context.Context, eventID string) (int64, error) {
 	count, err := s.client.rdb.ZCard(ctx, s.waitingKey(eventID)).Result()
