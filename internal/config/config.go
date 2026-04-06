@@ -18,6 +18,7 @@ type Config struct {
 	Server   ServerConfig   `koanf:"server"   validate:"required"`
 	Database DatabaseConfig `koanf:"database" validate:"required"`
 	Redis    RedisConfig    `koanf:"redis"    validate:"required"`
+	Auth     AuthConfig     `koanf:"auth"     validate:"required"`
 	Paystack PaystackConfig `koanf:"paystack" validate:"required"`
 	Workers  WorkersConfig  `koanf:"workers"  validate:"required"`
 	Logger   LoggerConfig   `koanf:"logger"`
@@ -48,6 +49,11 @@ type RedisConfig struct {
 	Port     int    `koanf:"port"     validate:"required"`
 	Password string `koanf:"password"`
 	DB       int    `koanf:"db"`
+}
+
+type AuthConfig struct {
+	TokenSecret string        `koanf:"token_secret"  validate:"required,min=32"`
+	TokenTTL    time.Duration `koanf:"token_ttl"     validate:"required"`
 }
 
 type PaystackConfig struct {
