@@ -32,17 +32,16 @@ func (s *LockStore) lockKey(claimID string) string {
 // The lock auto-expires after the configured TTL — if the server
 // crashes mid-claim, the lock is released automatically.
 func (s *LockStore) Acquire(ctx context.Context, claimID string) error {
-	res, err := s.client.rdb.SetArgs(ctx, s.lockKey(claimID), "1", redis.SetArgs{
-		Mode: "NX",  // only set if not exists
-		TTL:  s.ttl, // lock expiration
-	}).Result()
-	if err != nil {
-		return fmt.Errorf("acquiring lock: %w", err)
-	}
+	err := s.client.rdb.SetArgs(ctx, s.lockKey(claimID), "1", redis.SetArgs{
+		Mode: "NX",
+		TTL:  s.ttl,
+	}).Err()
 
-	// If lock already exists → not acquired
-	if res == "" {
-		return ErrLockNotAcquired
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return ErrLockNotAcquired
+		}
+		return fmt.Errorf("acquiring lock: %w", err)
 	}
 
 	return nil

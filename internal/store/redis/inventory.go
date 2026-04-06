@@ -41,18 +41,16 @@ func (s *InventoryStore) Get(ctx context.Context, eventID string) (int64, error)
 // Used by the restart recovery worker to warm the cache without
 // overwriting a valid existing count.
 func (s *InventoryStore) Set(ctx context.Context, eventID string, count int64) (bool, error) {
-	res, err := s.client.rdb.SetArgs(ctx, s.inventoryKey(eventID), count, redis.SetArgs{
+	err := s.client.rdb.SetArgs(ctx, s.inventoryKey(eventID), count, redis.SetArgs{
 		Mode: "NX", // only set if not exists
 		TTL:  0,
-	}).Result()
+	}).Err()
 
 	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return false, nil
+		}
 		return false, fmt.Errorf("setting inventory count: %w", err)
-	}
-
-	// If key already exists, Redis returns empty string
-	if res == "" {
-		return false, nil
 	}
 
 	return true, nil
