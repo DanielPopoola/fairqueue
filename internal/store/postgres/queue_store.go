@@ -102,7 +102,8 @@ func (s *QueueStore) GetActiveByEvent(ctx context.Context, eventID string) ([]do
         FROM queue_entries
         WHERE event_id = $1
         AND status IN ('WAITING', 'ADMITTED')
-        ORDER BY joined_at ASC`
+        ORDER BY joined_at ASC
+		`
 
 	rows, err := s.db.Pool.Query(ctx, query, eventID)
 	if err != nil {
@@ -111,6 +112,33 @@ func (s *QueueStore) GetActiveByEvent(ctx context.Context, eventID string) ([]do
 	defer rows.Close()
 
 	return scanQueueEntries(rows)
+}
+
+func (s *QueueStore) GetCustomerPosition(ctx context.Context, eventID, customerID string) (int64, error) {
+	query := `
+		SELECT position
+		FROM (
+			SELECT customer_id,
+			       ROW_NUMBER() OVER (
+			           ORDER BY joined_at ASC, id ASC
+			       ) AS position
+			FROM queue_entries
+			WHERE event_id = $1
+			AND status IN ('WAITING', 'ADMITTED')
+		) ranked
+		WHERE customer_id = $2
+	`
+
+	var position int64
+	err := s.db.Pool.QueryRow(ctx, query, eventID, customerID).Scan(&position)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return 0, domain.ErrQueueEntryNotFound
+		}
+		return 0, fmt.Errorf("getting customer position: %w", err)
+	}
+
+	return position, nil
 }
 
 func (s *QueueStore) GetStaleEntries(

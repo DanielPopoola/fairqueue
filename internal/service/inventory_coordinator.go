@@ -2,9 +2,11 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
+	"github.com/DanielPopoola/fairqueue/internal/domain"
 	redisstore "github.com/DanielPopoola/fairqueue/internal/store/redis"
 )
 
@@ -34,7 +36,7 @@ func NewInventoryCoordinator(
 func (c *InventoryCoordinator) Acquire(ctx context.Context, key string) (acquired bool, err error) {
 	err = c.lock.Acquire(ctx, key)
 	if err != nil {
-		if err == redisstore.ErrLockNotAcquired {
+		if errors.Is(err, redisstore.ErrLockNotAcquired) {
 			return false, redisstore.ErrLockNotAcquired
 		}
 		// Redis down — proceed without lock
@@ -58,24 +60,36 @@ func (c *InventoryCoordinator) Release(ctx context.Context, key string) {
 	}
 }
 
-// GetCount returns the cached inventory count for an event.
-// Returns -1 on cache miss.
-func (c *InventoryCoordinator) GetCount(ctx context.Context, eventID string) (int64, error) {
-	return c.inventory.Get(ctx, eventID)
+// AttemptDecrement atomically checks and decrements inventory.
+// Returns whether the decrement succeeded and whether it was
+// a cache miss requiring Postgres fallback.
+func (c *InventoryCoordinator) AttemptDecrement(ctx context.Context, eventID string) (newCount int64, cacheMiss bool, err error) {
+	res, err := c.inventory.DecrementIfAvailable(ctx, eventID)
+	if err != nil {
+		return 0, false, fmt.Errorf("attempting decrement: %w", err)
+	}
+
+	switch {
+	case res >= 0:
+		return res, false, nil // new count returned
+	case res == -1:
+		return 0, true, nil // cache miss
+	case res == -2:
+		return 0, false, fmt.Errorf("sold out: %w", domain.ErrEventSoldOut)
+	default:
+		return 0, false, fmt.Errorf("unexpected result: %d", res)
+	}
 }
 
-// Decrement decrements the inventory count after a successful claim.
-// Returns the new count.
-func (c *InventoryCoordinator) Decrement(ctx context.Context, eventID string) (int64, error) {
-	count, err := c.inventory.Decrement(ctx, eventID)
-	if err != nil {
-		c.logger.Warn("failed to decrement inventory cache, reconciliation will heal",
+// Rollback increments the inventory count back after a failed
+// Postgres insert. Compensates for the atomic decrement.
+func (c *InventoryCoordinator) Rollback(ctx context.Context, eventID string) {
+	if err := c.Increment(ctx, eventID); err != nil {
+		c.logger.Warn("failed to rollback inventory decrement, reconciliation will heal",
 			"event_id", eventID,
 			"error", err,
 		)
-		return 0, err
 	}
-	return count, nil
 }
 
 // Increment increments the inventory count after a claim is released.

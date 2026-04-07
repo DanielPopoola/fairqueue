@@ -80,23 +80,39 @@ func (s *ClaimService) Claim(ctx context.Context, token, eventID string) (*Claim
 		defer s.inventory.Release(ctx, lockKey)
 	}
 
-	count, err := s.inventory.GetCount(ctx, eventID)
+	newCount, cacheMiss, err := s.inventory.AttemptDecrement(ctx, eventID)
 	if err != nil {
+		if errors.Is(err, domain.ErrEventSoldOut) {
+			return nil, domain.ErrEventSoldOut
+		}
 		return nil, fmt.Errorf("checking inventory: %w", err)
 	}
 
-	if count == -1 {
-		s.logger.Warn("inventory cache miss, falling back to postgres",
+	if cacheMiss {
+		// Redis was wiped — fall back to Postgres count
+		// then set Redis so subsequent claims use the fast path
+		s.logger.Warn("inventory cache miss, falling back to Postgres",
 			"event_id", eventID,
 		)
-		count, err = s.countFromPostgres(ctx, eventID)
+		count, err := s.countFromPostgres(ctx, eventID)
 		if err != nil {
 			return nil, fmt.Errorf("counting inventory from postgres: %w", err)
 		}
-	}
-
-	if count <= 0 {
-		return nil, domain.ErrEventSoldOut
+		if count <= 0 {
+			return nil, domain.ErrEventSoldOut
+		}
+		// Warm the cache with the real count then retry
+		if err := s.inventory.ForceSync(ctx, eventID, count); err != nil {
+			s.logger.Warn("failed to warm inventory cache",
+				"event_id", eventID,
+				"error", err,
+			)
+		}
+		// Retry the atomic decrement now that cache is warm
+		_, _, err = s.inventory.AttemptDecrement(ctx, eventID)
+		if err != nil {
+			return nil, fmt.Errorf("retrying inventory decrement: %w", err)
+		}
 	}
 
 	claim := &domain.Claim{
@@ -109,21 +125,16 @@ func (s *ClaimService) Claim(ctx context.Context, token, eventID string) (*Claim
 	}
 
 	if err := s.claims.Create(ctx, claim); err != nil {
+		// Postgres insert failed — roll back the Redis decrement
+		s.inventory.Rollback(ctx, eventID)
+
 		if postgres.IsUniqueViolation(err) {
 			return nil, domain.ErrAlreadyClaimed
 		}
 		return nil, fmt.Errorf("creating claim: %w", err)
 	}
 
-	newCount, err := s.inventory.Decrement(ctx, eventID)
-	if err != nil {
-		s.logger.Warn("failed to decrement inventory, reconciliation will heal",
-			"event_id", eventID,
-			"claim_id", claim.ID,
-		)
-	}
-
-	if err == nil && newCount <= 0 {
+	if newCount <= 0 {
 		if err := s.markEventSoldOutIfDepleted(ctx, eventID, newCount); err != nil {
 			s.logger.Warn("failed to mark event sold out",
 				"event_id", eventID,

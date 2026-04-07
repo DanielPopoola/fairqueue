@@ -66,7 +66,7 @@ func (c *QueueCoordinator) GetPosition(ctx context.Context, eventID, customerID 
 			"customer_id", customerID,
 			"event_id", eventID,
 		)
-		return c.positionFromPostgres(ctx, eventID, customerID)
+		return c.pgQueue.GetCustomerPosition(ctx, eventID, customerID)
 	}
 
 	return pos + 1, nil // convert zero-based to one-based for display
@@ -176,21 +176,4 @@ func (c *QueueCoordinator) EvictExpired(ctx context.Context, eventID string, adm
 	}
 
 	return evicted, nil
-}
-
-// positionFromPostgres derives queue position from Postgres
-// when Redis position data is unavailable.
-func (c *QueueCoordinator) positionFromPostgres(ctx context.Context, eventID, customerID string) (int64, error) {
-	entries, err := c.pgQueue.GetActiveByEvent(ctx, eventID)
-	if err != nil {
-		return 0, fmt.Errorf("getting active queue entries: %w", err)
-	}
-
-	for i, entry := range entries {
-		if entry.CustomerID == customerID {
-			return int64(i + 1), nil // one-based position
-		}
-	}
-
-	return 0, domain.ErrQueueEntryNotFound
 }

@@ -2,6 +2,8 @@ package testhelpers
 
 import (
 	"context"
+	"io"
+	"log/slog"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -36,4 +38,10 @@ func FlushRedis(ctx context.Context, t *testing.T, client *redis.Client) {
 	if err := client.FlushAll(ctx).Err(); err != nil {
 		t.Fatalf("flushing redis: %v", err)
 	}
+}
+
+// testhelpers/helpers.go
+
+func NewTestLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
