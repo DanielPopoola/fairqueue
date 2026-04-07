@@ -34,6 +34,9 @@ func NewQueueCoordinator(
 // Join adds a customer to the queue for an event.
 // Writes to both Postgres (durable) and Redis (fast position tracking).
 func (c *QueueCoordinator) Join(ctx context.Context, entry *domain.QueueEntry) error {
+	now := time.Now().UTC()
+	entry.JoinedAt = now
+	entry.UpdatedAt = now
 	if err := c.pgQueue.Create(ctx, entry); err != nil {
 		return fmt.Errorf("persisting queue entry: %w", err)
 	}
