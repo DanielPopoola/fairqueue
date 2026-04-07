@@ -34,6 +34,9 @@ func (s *ClaimStore) Create(ctx context.Context, claim *domain.Claim) error {
 		claim.UpdatedAt,
 	)
 	if err != nil {
+		if IsUniqueViolation(err) {
+			return domain.ErrAlreadyClaimed
+		}
 		return fmt.Errorf("inserting claim: %w", err)
 	}
 

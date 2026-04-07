@@ -61,7 +61,7 @@ func TestClaimStore_Create_DuplicateActiveClaim(t *testing.T) {
 	}
 
 	err := store.Create(testCtx, duplicate)
-	if err == nil {
+	if err != domain.ErrAlreadyClaimed {
 		t.Fatal("expected error for duplicate active claim, got nil")
 	}
 }
