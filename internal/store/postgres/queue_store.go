@@ -35,6 +35,9 @@ func (s *QueueStore) Create(ctx context.Context, entry *domain.QueueEntry) error
 		entry.UpdatedAt,
 	)
 	if err != nil {
+		if IsUniqueViolation(err) {
+			return domain.ErrAlreadyInQueue
+		}
 		return fmt.Errorf("inserting queue entry: %w", err)
 	}
 	return nil
