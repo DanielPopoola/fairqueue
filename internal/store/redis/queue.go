@@ -122,14 +122,14 @@ func (s *QueueStore) admittedKey(eventID string) string {
 
 // Join atomically checks both ZSETs and adds the customer to the
 // waiting queue if they are not already present in either.
-func (s *QueueStore) Join(ctx context.Context, eventID, customerID string) error {
+func (s *QueueStore) Join(ctx context.Context, eventID, customerID string, score int64) error {
 	keys := []string{
 		s.waitingKey(eventID),
 		s.admittedKey(eventID),
 	}
 	args := []any{
 		customerID,
-		time.Now().UnixNano(),
+		score,
 	}
 
 	res, err := joinScript.Run(ctx, s.client.rdb, keys, args...).Int()

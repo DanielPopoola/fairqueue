@@ -102,7 +102,7 @@ func admitCustomer(ctx context.Context, t *testing.T, eventID, customerID string
 	redisQueue := redisstore.NewQueueStore(redisClient)
 
 	// Join waiting first then admit
-	redisQueue.Join(ctx, eventID, customerID)
+	redisQueue.Join(ctx, eventID, customerID, time.Now().UnixNano())
 	redisQueue.AdmitNextBatch(ctx, eventID, 1)
 
 	return token

@@ -38,8 +38,10 @@ func (c *QueueCoordinator) Join(ctx context.Context, entry *domain.QueueEntry) e
 		return fmt.Errorf("persisting queue entry: %w", err)
 	}
 
+	joinedAt := entry.JoinedAt.UnixNano()
+
 	// Redis second — fast position tracking
-	if err := c.redisQueue.Join(ctx, entry.EventID, entry.CustomerID); err != nil {
+	if err := c.redisQueue.Join(ctx, entry.EventID, entry.CustomerID, joinedAt); err != nil {
 		// Non-fatal — position tracking is best effort.
 		// Customer is in the queue per Postgres.
 		c.logger.Warn("failed to add customer to redis queue",

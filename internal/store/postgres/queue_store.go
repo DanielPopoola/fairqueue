@@ -25,6 +25,9 @@ func (s *QueueStore) Create(ctx context.Context, entry *domain.QueueEntry) error
             joined_at, admitted_at, updated_at
         ) VALUES ($1, $2, $3, $4, $5, $6, $7)
 	`
+	now := time.Now().UTC()
+	entry.JoinedAt = now
+	entry.UpdatedAt = now
 
 	_, err := s.db.Pool.Exec(ctx, query,
 		entry.ID,
