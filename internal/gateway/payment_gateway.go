@@ -4,9 +4,6 @@ package gateway
 import "context"
 
 // PaymentGateway defines the contract for payment provider integrations.
-// The service layer depends on this interface, not on any specific
-// implementation. Swap Paystack for Stripe by providing a new
-// implementation — the service is unchanged.
 type PaymentGateway interface {
 	// InitializeTransaction creates a new transaction and returns
 	// the URL the customer uses to complete payment.
