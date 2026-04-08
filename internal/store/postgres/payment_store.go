@@ -11,11 +11,20 @@ import (
 )
 
 type PaymentStore struct {
-	db *DB
+	db   *DB
+	exec Executor
 }
 
 func NewPaymentStore(db *DB) *PaymentStore {
-	return &PaymentStore{db: db}
+	return &PaymentStore{
+		db:   db,
+		exec: db.Pool,
+	}
+}
+
+// WithTx returns a new PaymentStore that uses the given transaction.
+func (s *PaymentStore) WithTx(tx pgx.Tx) *PaymentStore {
+	return &PaymentStore{db: s.db, exec: tx}
 }
 
 func (s *PaymentStore) Create(ctx context.Context, payment *domain.Payment) error {
@@ -27,7 +36,7 @@ func (s *PaymentStore) Create(ctx context.Context, payment *domain.Payment) erro
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		`
 
-	_, err := s.db.Pool.Exec(ctx, query,
+	_, err := s.exec.Exec(ctx, query,
 		payment.ID,
 		payment.ClaimID,
 		payment.CustomerID,
@@ -39,6 +48,9 @@ func (s *PaymentStore) Create(ctx context.Context, payment *domain.Payment) erro
 		payment.UpdatedAt,
 	)
 	if err != nil {
+		if IsUniqueViolation(err) {
+			return domain.ErrPaymentAlreadyMade
+		}
 		return fmt.Errorf("inserting payment: %w", err)
 	}
 	return nil
@@ -80,7 +92,7 @@ func (s *PaymentStore) GetStalePayments(ctx context.Context, olderThan time.Dura
         WHERE status IN ('INITIALIZING', 'PENDING')
         AND updated_at < $1
 	`
-	rows, err := s.db.Pool.Query(ctx, query, time.Now().Add(-olderThan))
+	rows, err := s.exec.Query(ctx, query, time.Now().Add(-olderThan))
 	if err != nil {
 		return nil, fmt.Errorf("querying stale payments: %w", err)
 	}
@@ -101,7 +113,7 @@ func (s *PaymentStore) UpdateStatus(
         WHERE id = $3
         AND status = $4
 	`
-	result, err := s.db.Pool.Exec(ctx, query,
+	result, err := s.exec.Exec(ctx, query,
 		newStatus,
 		time.Now(),
 		id,
@@ -125,7 +137,7 @@ func (s *PaymentStore) MarkPending(ctx context.Context, id, authorizationURL str
         WHERE id = $3
         AND status = 'INITIALIZING'`
 
-	result, err := s.db.Pool.Exec(ctx, query, authorizationURL, time.Now(), id)
+	result, err := s.exec.Exec(ctx, query, authorizationURL, time.Now(), id)
 	if err != nil {
 		return fmt.Errorf("marking payment pending: %w", err)
 	}
@@ -144,7 +156,7 @@ func (s *PaymentStore) MarkFailed(ctx context.Context, id, reason string) error 
         WHERE id = $3
         AND status = 'PENDING'`
 
-	result, err := s.db.Pool.Exec(ctx, query, reason, time.Now(), id)
+	result, err := s.exec.Exec(ctx, query, reason, time.Now(), id)
 	if err != nil {
 		return fmt.Errorf("marking payment failed: %w", err)
 	}
@@ -158,7 +170,7 @@ func (s *PaymentStore) MarkFailed(ctx context.Context, id, reason string) error 
 // the three single-row payment queries.
 func (s *PaymentStore) scanOne(ctx context.Context, query string, arg any) (*domain.Payment, error) {
 	var p domain.Payment
-	err := s.db.Pool.QueryRow(ctx, query, arg).Scan(
+	err := s.exec.QueryRow(ctx, query, arg).Scan(
 		&p.ID,
 		&p.ClaimID,
 		&p.CustomerID,

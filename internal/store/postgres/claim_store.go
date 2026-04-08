@@ -11,11 +11,19 @@ import (
 )
 
 type ClaimStore struct {
-	db *DB
+	db   *DB
+	exec Executor
 }
 
 func NewClaimStore(db *DB) *ClaimStore {
-	return &ClaimStore{db: db}
+	return &ClaimStore{
+		db:   db,
+		exec: db.Pool,
+	}
+}
+
+func (s *ClaimStore) WithTx(tx pgx.Tx) *ClaimStore {
+	return &ClaimStore{db: s.db, exec: tx}
 }
 
 func (s *ClaimStore) Create(ctx context.Context, claim *domain.Claim) error {
@@ -25,7 +33,7 @@ func (s *ClaimStore) Create(ctx context.Context, claim *domain.Claim) error {
 		) VALUES ($1, $2, $3, $4, $5, $6)
 	`
 
-	_, err := s.db.Pool.Exec(ctx, query,
+	_, err := s.exec.Exec(ctx, query,
 		claim.ID,
 		claim.EventID,
 		claim.CustomerID,
@@ -51,7 +59,7 @@ func (s *ClaimStore) GetByID(ctx context.Context, id string) (*domain.Claim, err
 	`
 
 	var c domain.Claim
-	err := s.db.Pool.QueryRow(ctx, query, id).Scan(
+	err := s.exec.QueryRow(ctx, query, id).Scan(
 		&c.ID,
 		&c.EventID,
 		&c.CustomerID,
@@ -79,7 +87,7 @@ func (s *ClaimStore) GetByCustomerAndEvent(ctx context.Context, customerID, even
 	`
 
 	var c domain.Claim
-	err := s.db.Pool.QueryRow(ctx, query, customerID, eventID).Scan(
+	err := s.exec.QueryRow(ctx, query, customerID, eventID).Scan(
 		&c.ID,
 		&c.EventID,
 		&c.CustomerID,
@@ -103,7 +111,7 @@ func (s *ClaimStore) GetExpiredClaims(ctx context.Context) ([]domain.Claim, erro
         WHERE status = 'CLAIMED'
         AND created_at < $1
 	`
-	rows, err := s.db.Pool.Query(ctx, query, time.Now().Add(-domain.ClaimTTL))
+	rows, err := s.exec.Query(ctx, query, time.Now().Add(-domain.ClaimTTL))
 	if err != nil {
 		return nil, fmt.Errorf("querying expired claims: %w", err)
 	}
@@ -122,7 +130,7 @@ func (s *ClaimStore) CountActive(ctx context.Context, eventID string) (int64, er
 		AND status = 'CLAIMED'`
 
 	var count int64
-	err := s.db.Pool.QueryRow(ctx, query, eventID).Scan(&count)
+	err := s.exec.QueryRow(ctx, query, eventID).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("counting active claims: %w", err)
 	}
@@ -142,7 +150,7 @@ func (s *ClaimStore) UpdateStatus(
         AND status = $4
 	`
 
-	result, err := s.db.Pool.Exec(ctx, query,
+	result, err := s.exec.Exec(ctx, query,
 		newStatus,
 		time.Now(),
 		id,
