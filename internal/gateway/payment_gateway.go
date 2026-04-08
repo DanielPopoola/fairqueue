@@ -4,6 +4,8 @@ package gateway
 import "context"
 
 // PaymentGateway defines the contract for payment provider integrations.
+//
+//go:generate mockery --name PaymentGateway --output ./mocks --outpkg mock
 type PaymentGateway interface {
 	// InitializeTransaction creates a new transaction and returns
 	// the URL the customer uses to complete payment.

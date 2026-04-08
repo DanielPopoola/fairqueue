@@ -28,12 +28,40 @@ type PaymentService struct {
 	logger    *slog.Logger
 }
 
+func NewPaymentService(
+	payments *postgres.PaymentStore,
+	claims *postgres.ClaimStore,
+	customers *postgres.CustomerStore,
+	events *postgres.EventStore,
+	db *postgres.DB,
+	gw gateway.PaymentGateway,
+	inventory *InventoryCoordinator,
+	logger *slog.Logger,
+) *PaymentService {
+	return &PaymentService{
+		payments:  payments,
+		claims:    claims,
+		customers: customers,
+		events:    events,
+		db:        db,
+		gateway:   gw,
+		inventory: inventory,
+		logger:    logger,
+	}
+}
+
 type InitializeResult struct {
 	Payment          *domain.Payment
 	AuthorizationURL string
 }
 
 func (s *PaymentService) Initialize(ctx context.Context, claimID, customerID string) (*InitializeResult, error) {
+	if result, err := s.getExistingPayment(ctx, claimID); err != nil {
+		return nil, err
+	} else if result != nil {
+		return result, nil
+	}
+
 	claim, customer, event, err := s.fetchInitData(ctx, claimID, customerID)
 	if err != nil {
 		return nil, err
@@ -55,6 +83,16 @@ func (s *PaymentService) Initialize(ctx context.Context, claimID, customerID str
 		UpdatedAt:  time.Now(),
 	}
 	if err := s.payments.Create(ctx, payment); err != nil {
+		if errors.Is(err, domain.ErrPaymentAlreadyMade) {
+			existing, err := s.payments.GetByClaimID(ctx, claimID)
+			if err != nil {
+				return nil, fmt.Errorf("fetching existing payment after race: %w", err)
+			}
+			return &InitializeResult{
+				Payment:          existing,
+				AuthorizationURL: stringVal(existing.AuthorizationURL),
+			}, nil
+		}
 		return nil, fmt.Errorf("creating payment record: %w", err)
 	}
 
@@ -119,7 +157,27 @@ func (s *PaymentService) reconcileSingle(ctx context.Context, p *domain.Payment)
 	}
 }
 
-// ─── INTERNAL HELPERS (TRANSACTIONS & FLOWS) ─────────────────────────────────
+// getExistingPayment returns an existing payment for a claim if one already exists
+func (s *PaymentService) getExistingPayment(ctx context.Context, claimID string) (*InitializeResult, error) {
+	existing, err := s.payments.GetByClaimID(ctx, claimID)
+	if err != nil {
+		if errors.Is(err, domain.ErrPaymentNotFound) {
+			return nil, nil // no existing payment, proceed normally
+		}
+		return nil, fmt.Errorf("checking existing payment: %w", err)
+	}
+	return &InitializeResult{
+		Payment:          existing,
+		AuthorizationURL: stringVal(existing.AuthorizationURL),
+	}, nil
+}
+
+func stringVal(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
 
 func (s *PaymentService) confirmFlow(ctx context.Context, p *domain.Payment) error {
 	return s.db.WithTransaction(ctx, func(tx pgx.Tx) error {
@@ -133,9 +191,9 @@ func (s *PaymentService) confirmFlow(ctx context.Context, p *domain.Payment) err
 	})
 }
 
-func (s *PaymentService) failureFlow(ctx context.Context, p *domain.Payment, reason string) error {
+func (s *PaymentService) failureFlow(ctx context.Context, p *domain.Payment, reason string, expectedStatus domain.PaymentStatus) error {
 	err := s.db.WithTransaction(ctx, func(tx pgx.Tx) error {
-		if err := s.payments.WithTx(tx).MarkFailed(ctx, p.ID, reason); err != nil {
+		if err := s.payments.WithTx(tx).MarkFailed(ctx, p.ID, reason, expectedStatus); err != nil {
 			if errors.Is(err, domain.ErrPaymentNotFound) {
 				return nil
 			}
@@ -184,7 +242,7 @@ func (s *PaymentService) validateClaimForPayment(c *domain.Claim, customerID str
 
 func (s *PaymentService) handleGatewayInitError(ctx context.Context, p *domain.Payment, err error, log *slog.Logger) error {
 	if errors.Is(err, paystack.ErrPermanent) {
-		if ferr := s.failureFlow(ctx, p, err.Error()); ferr != nil {
+		if ferr := s.failureFlow(ctx, p, err.Error(), domain.PaymentStatusInitializing); ferr != nil {
 			log.Error("failed to handle permanent failure cleanup", "error", ferr)
 		}
 		return fmt.Errorf("payment permanently rejected: %w", err)
@@ -203,7 +261,7 @@ func (s *PaymentService) pollGatewayStatus(ctx context.Context, p *domain.Paymen
 	case "success":
 		return s.confirmFlow(ctx, p)
 	case "failed", "abandoned":
-		return s.failureFlow(ctx, p, resp.GatewayResponse)
+		return s.failureFlow(ctx, p, resp.GatewayResponse, domain.PaymentStatusPending)
 	default:
 		return nil
 	}
@@ -250,7 +308,7 @@ func (s *PaymentService) processChargeFailure(ctx context.Context, d gateway.Web
 	if err != nil {
 		return err
 	}
-	return s.failureFlow(ctx, p, d.GatewayResponse)
+	return s.failureFlow(ctx, p, d.GatewayResponse, domain.PaymentStatusPending)
 }
 
 func (s *PaymentService) toGatewayRequest(email string, p *domain.Payment) gateway.InitializeRequest {
@@ -270,7 +328,7 @@ func (s *PaymentService) retryInitialization(ctx context.Context, p *domain.Paym
 	resp, err := s.gateway.InitializeTransaction(ctx, s.toGatewayRequest(customer.Email, p))
 	if err != nil {
 		if errors.Is(err, paystack.ErrPermanent) {
-			return s.failureFlow(ctx, p, err.Error())
+			return s.failureFlow(ctx, p, err.Error(), domain.PaymentStatusInitializing)
 		}
 		return err
 	}

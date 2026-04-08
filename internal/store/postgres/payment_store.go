@@ -147,16 +147,16 @@ func (s *PaymentStore) MarkPending(ctx context.Context, id, authorizationURL str
 	return nil
 }
 
-func (s *PaymentStore) MarkFailed(ctx context.Context, id, reason string) error {
+func (s *PaymentStore) MarkFailed(ctx context.Context, id, reason string, expectedStatus domain.PaymentStatus) error {
 	query := `
         UPDATE payments
         SET status = 'FAILED',
             failure_reason = $1,
             updated_at = $2
         WHERE id = $3
-        AND status = 'PENDING'`
+        AND status = $4`
 
-	result, err := s.exec.Exec(ctx, query, reason, time.Now(), id)
+	result, err := s.exec.Exec(ctx, query, reason, time.Now(), id, expectedStatus)
 	if err != nil {
 		return fmt.Errorf("marking payment failed: %w", err)
 	}
