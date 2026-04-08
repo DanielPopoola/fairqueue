@@ -21,11 +21,11 @@ func TestQueueStore_Join_DuplicatePrevented(t *testing.T) {
 	eventID := "event-1"
 	customerID := "customer-1"
 
-	if err := store.Join(testCtx, eventID, customerID); err != nil {
+	if err := store.Join(testCtx, eventID, customerID, time.Now().UnixNano()); err != nil {
 		t.Fatalf("first join: %v", err)
 	}
 
-	if err := store.Join(testCtx, eventID, customerID); err != domain.ErrAlreadyInQueue {
+	if err := store.Join(testCtx, eventID, customerID, time.Now().UnixNano()); err != domain.ErrAlreadyInQueue {
 		t.Fatalf("expected ErrAlreadyInQueue, got: %v", err)
 	}
 }
@@ -40,11 +40,11 @@ func TestQueueStore_Join_AdmittedUserCannotRejoin(t *testing.T) {
 	customerID := "customer-2"
 
 	// Join and admit
-	store.Join(testCtx, eventID, customerID)
+	store.Join(testCtx, eventID, customerID, time.Now().UnixNano())
 	store.AdmitNextBatch(testCtx, eventID, 1)
 
 	// User is now in admitted ZSET — joining again should fail
-	if err := store.Join(testCtx, eventID, customerID); err != domain.ErrAlreadyInQueue {
+	if err := store.Join(testCtx, eventID, customerID, time.Now().UnixNano()); err != domain.ErrAlreadyInQueue {
 		t.Fatalf("expected ErrAlreadyInQueue for admitted customer, got: %v", err)
 	}
 }
@@ -60,7 +60,7 @@ func TestQueueStore_AdmitNextBatch_AtomicUnderConcurrency(t *testing.T) {
 	// Add 20 customers to the waiting queue
 	for i := range 20 {
 		customerID := fmt.Sprintf("customer-%d", i)
-		if err := store.Join(testCtx, eventID, customerID); err != nil {
+		if err := store.Join(testCtx, eventID, customerID, time.Now().UnixNano()); err != nil {
 			t.Fatalf("joining customer %d: %v", i, err)
 		}
 	}
@@ -110,8 +110,8 @@ func TestQueueStore_EvictExpiredAdmitted(t *testing.T) {
 	eventID := "event-4"
 
 	// Add and admit two customers
-	store.Join(testCtx, eventID, "customer-fresh")
-	store.Join(testCtx, eventID, "customer-expired")
+	store.Join(testCtx, eventID, "customer-fresh", time.Now().UnixNano())
+	store.Join(testCtx, eventID, "customer-expired", time.Now().UnixNano())
 	store.AdmitNextBatch(testCtx, eventID, 2)
 
 	// Backdate customer-expired's admission score in Redis

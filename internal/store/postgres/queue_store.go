@@ -25,7 +25,6 @@ func (s *QueueStore) Create(ctx context.Context, entry *domain.QueueEntry) error
             joined_at, admitted_at, updated_at
         ) VALUES ($1, $2, $3, $4, $5, $6, $7)
 	`
-
 	_, err := s.db.Pool.Exec(ctx, query,
 		entry.ID,
 		entry.EventID,
@@ -36,6 +35,9 @@ func (s *QueueStore) Create(ctx context.Context, entry *domain.QueueEntry) error
 		entry.UpdatedAt,
 	)
 	if err != nil {
+		if IsUniqueViolation(err) {
+			return domain.ErrAlreadyInQueue
+		}
 		return fmt.Errorf("inserting queue entry: %w", err)
 	}
 	return nil
@@ -102,7 +104,8 @@ func (s *QueueStore) GetActiveByEvent(ctx context.Context, eventID string) ([]do
         FROM queue_entries
         WHERE event_id = $1
         AND status IN ('WAITING', 'ADMITTED')
-        ORDER BY joined_at ASC`
+        ORDER BY joined_at ASC
+		`
 
 	rows, err := s.db.Pool.Query(ctx, query, eventID)
 	if err != nil {
@@ -111,6 +114,33 @@ func (s *QueueStore) GetActiveByEvent(ctx context.Context, eventID string) ([]do
 	defer rows.Close()
 
 	return scanQueueEntries(rows)
+}
+
+func (s *QueueStore) GetCustomerPosition(ctx context.Context, eventID, customerID string) (int64, error) {
+	query := `
+		SELECT position
+		FROM (
+			SELECT customer_id,
+			       ROW_NUMBER() OVER (
+			           ORDER BY joined_at ASC, id ASC
+			       ) AS position
+			FROM queue_entries
+			WHERE event_id = $1
+			AND status IN ('WAITING', 'ADMITTED')
+		) ranked
+		WHERE customer_id = $2
+	`
+
+	var position int64
+	err := s.db.Pool.QueryRow(ctx, query, eventID, customerID).Scan(&position)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return 0, domain.ErrQueueEntryNotFound
+		}
+		return 0, fmt.Errorf("getting customer position: %w", err)
+	}
+
+	return position, nil
 }
 
 func (s *QueueStore) GetStaleEntries(
@@ -184,6 +214,43 @@ func (s *QueueStore) MarkAdmitted(ctx context.Context, id string) error {
 	}
 	if result.RowsAffected() == 0 {
 		return domain.ErrQueueEntryNotFound
+	}
+	return nil
+}
+
+// MarkAdmittedBatch updates all queue entries for the given
+// customerIDs to ADMITTED in a single query.
+func (s *QueueStore) MarkAdmittedBatch(ctx context.Context, eventID string, customerIDs []string) error {
+	query := `
+		UPDATE queue_entries
+		SET status = 'ADMITTED',
+		    admitted_at = $1,
+		    updated_at  = $1
+		WHERE customer_id = ANY($2)
+		AND   event_id    = $3
+		AND   status      = 'WAITING'
+	`
+
+	_, err := s.db.Pool.Exec(ctx, query, time.Now(), customerIDs, eventID)
+	if err != nil {
+		return fmt.Errorf("batch admitting queue entries: %w", err)
+	}
+	return nil
+}
+
+func (s *QueueStore) MarkExpiredBatch(ctx context.Context, eventID string, evicted []string) error {
+	query := `
+		UPDATE queue_entries
+		SET status = 'EXPIRED',
+			updated_at = $1
+		WHERE customer_id = ANY($2)
+		AND event_id = $3
+		AND status = 'ADMITTED'
+	`
+
+	_, err := s.db.Pool.Exec(ctx, query, time.Now(), evicted, eventID)
+	if err != nil {
+		return fmt.Errorf("batch evicting admitted queue entries: %w", err)
 	}
 	return nil
 }

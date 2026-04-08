@@ -10,6 +10,26 @@ import (
 
 const inventoryKeyFmt = "inventory:%s" // inventory:{event_id}
 
+// decrementIfAvailableScript atomically checks and decrements
+// inventory in a single Redis operation.
+//
+// Returns 1 if inventory was available and decremented.
+// Returns 0 if inventory was already at zero.
+var decrementIfAvailableScript = redis.NewScript(`
+	local count = redis.call("GET", KEYS[1])
+
+	if not count then
+		return -1  -- cache miss, fall back to Postgres
+	end
+
+	if tonumber(count) <= 0 then
+		return -2  -- sold out
+	end
+
+	redis.call("DECRBY", KEYS[1], 1)
+	return tonumber(count) - 1 -- return new count
+`)
+
 // InventoryStore manages the cacehd inventory count for events
 type InventoryStore struct {
 	client *Client
@@ -85,4 +105,23 @@ func (s *InventoryStore) Increment(ctx context.Context, eventID string) (int64, 
 		return 0, fmt.Errorf("incrementing inventory count: %w", err)
 	}
 	return val, nil
+}
+
+// DecrementIfAvailable atomically checks and decrements inventory.
+//
+// Returns:
+//
+//	 1 → decremented successfully, proceed with claim
+//	-2 → sold out, reject claim
+//	-1 → cache miss, fall back to Postgres
+func (s *InventoryStore) DecrementIfAvailable(ctx context.Context, eventID string) (int64, error) {
+	res, err := decrementIfAvailableScript.Run(
+		ctx,
+		s.client.rdb,
+		[]string{s.inventoryKey(eventID)},
+	).Int64()
+	if err != nil {
+		return 0, fmt.Errorf("decrementing inventory: %w", err)
+	}
+	return res, nil
 }

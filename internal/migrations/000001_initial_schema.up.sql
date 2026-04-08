@@ -96,7 +96,7 @@ CREATE TABLE payments (
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_payments_claim_id ON payments(claim_id);
+CREATE UNIQUE INDEX idx_payments_one_per_claim ON payments(claim_id);
 CREATE INDEX idx_payments_customer_id ON payments(customer_id);
 
 CREATE INDEX idx_payments_status_updated_at

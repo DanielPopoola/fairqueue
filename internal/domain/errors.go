@@ -29,5 +29,6 @@ var (
 
 	// Payment errors
 	ErrPaymentNotFound        = errors.New("payment not found")
+	ErrPaymentAlreadyMade     = errors.New("payment already exists")
 	ErrPaymentNotReconcilable = errors.New("payment is not in a reconcilable state")
 )

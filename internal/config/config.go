@@ -14,14 +14,15 @@ import (
 )
 
 type Config struct {
-	Env      string         `koanf:"env"      validate:"required,oneof=development staging production"`
-	Server   ServerConfig   `koanf:"server"   validate:"required"`
-	Database DatabaseConfig `koanf:"database" validate:"required"`
-	Redis    RedisConfig    `koanf:"redis"    validate:"required"`
-	Auth     AuthConfig     `koanf:"auth"     validate:"required"`
-	Paystack PaystackConfig `koanf:"paystack" validate:"required"`
-	Workers  WorkersConfig  `koanf:"workers"  validate:"required"`
-	Logger   LoggerConfig   `koanf:"logger"`
+	Env          string         `koanf:"env"      validate:"required,oneof=development staging production"`
+	Server       ServerConfig   `koanf:"server"   validate:"required"`
+	Database     DatabaseConfig `koanf:"database" validate:"required"`
+	Redis        RedisConfig    `koanf:"redis"    validate:"required"`
+	Auth         AuthConfig     `koanf:"auth"     validate:"required"`
+	Paystack     PaystackConfig `koanf:"paystack" validate:"required"`
+	GatewayRetry RetryConfig    `koanf:"gatewayretry" validate:"required"`
+	Workers      WorkersConfig  `koanf:"workers"  validate:"required"`
+	Logger       LoggerConfig   `koanf:"logger"`
 }
 
 type ServerConfig struct {
@@ -60,6 +61,12 @@ type PaystackConfig struct {
 	SecretKey     string `koanf:"secret_key"      validate:"required"`
 	WebhookSecret string `koanf:"webhook_secret"  validate:"required"`
 	BaseURL       string `koanf:"base_url"        validate:"required,url"`
+}
+
+type RetryConfig struct {
+	MaxAttempts int           `koanf:"max_attempts" validate:"required"`
+	BaseDelay   time.Duration `koanf:"base_delay"   validate:"required"`
+	MaxDelay    time.Duration `koanf:"max_delay"    validate:"required"`
 }
 
 // WorkersConfig gives each worker its own interval and batch size
