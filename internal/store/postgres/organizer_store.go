@@ -11,11 +11,11 @@ import (
 )
 
 type OrganizerStore struct {
-	db *DB
+	exec Executor
 }
 
 func NewOrganizerStore(db *DB) *OrganizerStore {
-	return &OrganizerStore{db: db}
+	return &OrganizerStore{exec: db.Pool}
 }
 
 func (s *OrganizerStore) Create(ctx context.Context, organizer *domain.Organizer) error {
@@ -23,7 +23,7 @@ func (s *OrganizerStore) Create(ctx context.Context, organizer *domain.Organizer
 		INSERT INTO organizers (id, name, email, password_hash, created_at)
 		VALUES ($1, $2, $3, $4, $5)`
 
-	_, err := s.db.Pool.Exec(ctx, query,
+	_, err := s.exec.Exec(ctx, query,
 		organizer.ID,
 		organizer.Name,
 		organizer.Email,
@@ -43,7 +43,7 @@ func (s *OrganizerStore) GetByID(ctx context.Context, id string) (*domain.Organi
 		WHERE id = $1`
 
 	var o domain.Organizer
-	err := s.db.Pool.QueryRow(ctx, query, id).Scan(
+	err := s.exec.QueryRow(ctx, query, id).Scan(
 		&o.ID,
 		&o.Name,
 		&o.Email,
@@ -66,7 +66,7 @@ func (s *OrganizerStore) GetByEmail(ctx context.Context, email string) (*domain.
 		WHERE email = $1`
 
 	var o domain.Organizer
-	err := s.db.Pool.QueryRow(ctx, query, email).Scan(
+	err := s.exec.QueryRow(ctx, query, email).Scan(
 		&o.ID,
 		&o.Name,
 		&o.Email,

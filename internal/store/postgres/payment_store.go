@@ -11,20 +11,16 @@ import (
 )
 
 type PaymentStore struct {
-	db   *DB
 	exec Executor
 }
 
 func NewPaymentStore(db *DB) *PaymentStore {
-	return &PaymentStore{
-		db:   db,
-		exec: db.Pool,
-	}
+	return &PaymentStore{exec: db.Pool}
 }
 
 // WithTx returns a new PaymentStore that uses the given transaction.
 func (s *PaymentStore) WithTx(tx pgx.Tx) *PaymentStore {
-	return &PaymentStore{db: s.db, exec: tx}
+	return &PaymentStore{exec: tx}
 }
 
 func (s *PaymentStore) Create(ctx context.Context, payment *domain.Payment) error {

@@ -11,11 +11,11 @@ import (
 )
 
 type QueueStore struct {
-	db *DB
+	exec Executor
 }
 
 func NewQueueStore(db *DB) *QueueStore {
-	return &QueueStore{db: db}
+	return &QueueStore{exec: db.Pool}
 }
 
 func (s *QueueStore) Create(ctx context.Context, entry *domain.QueueEntry) error {
@@ -25,7 +25,7 @@ func (s *QueueStore) Create(ctx context.Context, entry *domain.QueueEntry) error
             joined_at, admitted_at, updated_at
         ) VALUES ($1, $2, $3, $4, $5, $6, $7)
 	`
-	_, err := s.db.Pool.Exec(ctx, query,
+	_, err := s.exec.Exec(ctx, query,
 		entry.ID,
 		entry.EventID,
 		entry.CustomerID,
@@ -51,7 +51,7 @@ func (s *QueueStore) GetByID(ctx context.Context, id string) (*domain.QueueEntry
         WHERE id = $1`
 
 	var q domain.QueueEntry
-	err := s.db.Pool.QueryRow(ctx, query, id).Scan(
+	err := s.exec.QueryRow(ctx, query, id).Scan(
 		&q.ID,
 		&q.EventID,
 		&q.CustomerID,
@@ -79,7 +79,7 @@ func (s *QueueStore) GetByCustomerAndEvent(ctx context.Context, customerID, even
         AND status IN ('WAITING', 'ADMITTED')`
 
 	var q domain.QueueEntry
-	err := s.db.Pool.QueryRow(ctx, query, customerID, eventID).Scan(
+	err := s.exec.QueryRow(ctx, query, customerID, eventID).Scan(
 		&q.ID,
 		&q.EventID,
 		&q.CustomerID,
@@ -107,7 +107,7 @@ func (s *QueueStore) GetActiveByEvent(ctx context.Context, eventID string) ([]do
         ORDER BY joined_at ASC
 		`
 
-	rows, err := s.db.Pool.Query(ctx, query, eventID)
+	rows, err := s.exec.Query(ctx, query, eventID)
 	if err != nil {
 		return nil, fmt.Errorf("querying active queue entries: %w", err)
 	}
@@ -132,7 +132,7 @@ func (s *QueueStore) GetCustomerPosition(ctx context.Context, eventID, customerI
 	`
 
 	var position int64
-	err := s.db.Pool.QueryRow(ctx, query, eventID, customerID).Scan(&position)
+	err := s.exec.QueryRow(ctx, query, eventID, customerID).Scan(&position)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return 0, domain.ErrQueueEntryNotFound
@@ -160,7 +160,7 @@ func (s *QueueStore) GetStaleEntries(
             AND admitted_at < $2
         )`
 
-	rows, err := s.db.Pool.Query(ctx, query,
+	rows, err := s.exec.Query(ctx, query,
 		time.Now().Add(-waitingOlderThan),
 		time.Now().Add(-admittedOlderThan),
 	)
@@ -184,7 +184,7 @@ func (s *QueueStore) UpdateStatus(
         WHERE id = $3
         AND status = $4`
 
-	result, err := s.db.Pool.Exec(ctx, query,
+	result, err := s.exec.Exec(ctx, query,
 		newStatus,
 		time.Now(),
 		id,
@@ -208,7 +208,7 @@ func (s *QueueStore) MarkAdmitted(ctx context.Context, id string) error {
         WHERE id = $2
         AND status = 'WAITING'`
 
-	result, err := s.db.Pool.Exec(ctx, query, time.Now(), id)
+	result, err := s.exec.Exec(ctx, query, time.Now(), id)
 	if err != nil {
 		return fmt.Errorf("marking queue entry admitted: %w", err)
 	}
@@ -231,7 +231,7 @@ func (s *QueueStore) MarkAdmittedBatch(ctx context.Context, eventID string, cust
 		AND   status      = 'WAITING'
 	`
 
-	_, err := s.db.Pool.Exec(ctx, query, time.Now(), customerIDs, eventID)
+	_, err := s.exec.Exec(ctx, query, time.Now(), customerIDs, eventID)
 	if err != nil {
 		return fmt.Errorf("batch admitting queue entries: %w", err)
 	}
@@ -248,7 +248,7 @@ func (s *QueueStore) MarkExpiredBatch(ctx context.Context, eventID string, evict
 		AND status = 'ADMITTED'
 	`
 
-	_, err := s.db.Pool.Exec(ctx, query, time.Now(), evicted, eventID)
+	_, err := s.exec.Exec(ctx, query, time.Now(), evicted, eventID)
 	if err != nil {
 		return fmt.Errorf("batch evicting admitted queue entries: %w", err)
 	}

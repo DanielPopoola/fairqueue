@@ -11,19 +11,15 @@ import (
 )
 
 type ClaimStore struct {
-	db   *DB
 	exec Executor
 }
 
 func NewClaimStore(db *DB) *ClaimStore {
-	return &ClaimStore{
-		db:   db,
-		exec: db.Pool,
-	}
+	return &ClaimStore{exec: db.Pool}
 }
 
 func (s *ClaimStore) WithTx(tx pgx.Tx) *ClaimStore {
-	return &ClaimStore{db: s.db, exec: tx}
+	return &ClaimStore{exec: tx}
 }
 
 func (s *ClaimStore) Create(ctx context.Context, claim *domain.Claim) error {

@@ -13,11 +13,11 @@ import (
 )
 
 type CustomerStore struct {
-	db *DB
+	exec Executor
 }
 
 func NewCustomerStore(db *DB) *CustomerStore {
-	return &CustomerStore{db: db}
+	return &CustomerStore{exec: db.Pool}
 }
 
 func (s *CustomerStore) Create(ctx context.Context, customer *domain.Customer) error {
@@ -25,7 +25,7 @@ func (s *CustomerStore) Create(ctx context.Context, customer *domain.Customer) e
 		INSERT INTO customers (id, email, created_at)
 		VALUES ($1, $2, $3)`
 
-	_, err := s.db.Pool.Exec(ctx, query,
+	_, err := s.exec.Exec(ctx, query,
 		customer.ID,
 		customer.Email,
 		customer.CreatedAt,
@@ -43,7 +43,7 @@ func (s *CustomerStore) GetByID(ctx context.Context, id string) (*domain.Custome
 		WHERE id = $1`
 
 	var c domain.Customer
-	err := s.db.Pool.QueryRow(ctx, query, id).Scan(
+	err := s.exec.QueryRow(ctx, query, id).Scan(
 		&c.ID,
 		&c.Email,
 		&c.CreatedAt,
@@ -64,7 +64,7 @@ func (s *CustomerStore) GetByEmail(ctx context.Context, email string) (*domain.C
 		WHERE email = $1`
 
 	var c domain.Customer
-	err := s.db.Pool.QueryRow(ctx, query, email).Scan(
+	err := s.exec.QueryRow(ctx, query, email).Scan(
 		&c.ID,
 		&c.Email,
 		&c.CreatedAt,
