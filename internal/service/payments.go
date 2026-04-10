@@ -17,6 +17,7 @@ import (
 	postgres "github.com/DanielPopoola/fairqueue/internal/store/postgres"
 )
 
+// PaymentService orchestrates payment lifecycle operations and webhook handling.
 type PaymentService struct {
 	payments  *postgres.PaymentStore
 	claims    *postgres.ClaimStore
@@ -28,6 +29,7 @@ type PaymentService struct {
 	logger    *slog.Logger
 }
 
+// NewPaymentService constructs a payment service with its stores, gateway, and coordinators.
 func NewPaymentService(
 	payments *postgres.PaymentStore,
 	claims *postgres.ClaimStore,
@@ -50,11 +52,13 @@ func NewPaymentService(
 	}
 }
 
+// InitializeResult contains the persisted payment and checkout URL for the client.
 type InitializeResult struct {
 	Payment          *domain.Payment
 	AuthorizationURL string
 }
 
+// Initialize creates or reuses a payment for a claim and starts gateway checkout.
 func (s *PaymentService) Initialize(ctx context.Context, claimID, customerID string) (*InitializeResult, error) {
 	if result, err := s.getExistingPayment(ctx, claimID); err != nil {
 		return nil, err
@@ -110,6 +114,7 @@ func (s *PaymentService) Initialize(ctx context.Context, claimID, customerID str
 	return &InitializeResult{Payment: payment, AuthorizationURL: resp.AuthorizationURL}, nil
 }
 
+// HandleWebhook authenticates and parses gateway webhook payloads, then dispatches async processing.
 func (s *PaymentService) HandleWebhook(ctx context.Context, payload []byte, signature string) error {
 	if !s.gateway.VerifyWebhookSignature(payload, signature) {
 		return fmt.Errorf("invalid webhook signature")
@@ -120,17 +125,14 @@ func (s *PaymentService) HandleWebhook(ctx context.Context, payload []byte, sign
 		return err
 	}
 
-	switch event {
-	case "charge.success":
-		return s.processChargeSuccess(ctx, data)
-	case "charge.failed":
-		return s.processChargeFailure(ctx, data)
-	default:
-		s.logger.Info("ignoring unknown webhook event", "event", event)
-		return nil
-	}
+	// Webhook handlers should acknowledge quickly after authentication/parsing.
+	// We therefore process side effects asynchronously and rely on idempotent
+	// status transitions for eventual consistency.
+	s.processWebhookAsync(context.WithoutCancel(ctx), event, data)
+	return nil
 }
 
+// Reconcile heals stale payments stuck in intermediate states.
 func (s *PaymentService) Reconcile(ctx context.Context, olderThan time.Duration) error {
 	stale, err := s.payments.GetStalePayments(ctx, olderThan)
 	if err != nil {
@@ -146,6 +148,27 @@ func (s *PaymentService) Reconcile(ctx context.Context, olderThan time.Duration)
 	return nil
 }
 
+// processWebhookAsync dispatches webhook event processing in a background goroutine.
+func (s *PaymentService) processWebhookAsync(ctx context.Context, event string, data gateway.WebhookData) {
+	go func() {
+		var err error
+		switch event {
+		case "charge.success":
+			err = s.processChargeSuccess(ctx, data)
+		case "charge.failed":
+			err = s.processChargeFailure(ctx, data)
+		default:
+			s.logger.Info("ignoring unknown webhook event", "event", event)
+			return
+		}
+
+		if err != nil {
+			s.logger.Error("webhook processing failed", "event", event, "reference", data.Reference, "error", err)
+		}
+	}()
+}
+
+// reconcileSingle repairs a single stale payment based on its current state.
 func (s *PaymentService) reconcileSingle(ctx context.Context, p *domain.Payment) error {
 	switch p.Status { //nolint:exhaustive // Only need to reconcile intermediate states.
 	case domain.PaymentStatusInitializing:
@@ -172,6 +195,7 @@ func (s *PaymentService) getExistingPayment(ctx context.Context, claimID string)
 	}, nil
 }
 
+// stringVal safely dereferences a string pointer.
 func stringVal(s *string) string {
 	if s == nil {
 		return ""
@@ -179,6 +203,7 @@ func stringVal(s *string) string {
 	return *s
 }
 
+// confirmFlow atomically marks a pending payment as confirmed and confirms its claim.
 func (s *PaymentService) confirmFlow(ctx context.Context, p *domain.Payment) error {
 	return s.db.WithTransaction(ctx, func(tx pgx.Tx) error {
 		if err := s.payments.WithTx(tx).UpdateStatus(ctx, p.ID, domain.PaymentStatusConfirmed, domain.PaymentStatusPending); err != nil {
@@ -191,6 +216,7 @@ func (s *PaymentService) confirmFlow(ctx context.Context, p *domain.Payment) err
 	})
 }
 
+// failureFlow atomically marks a payment failed and releases the related claim.
 func (s *PaymentService) failureFlow(ctx context.Context, p *domain.Payment, reason string, expectedStatus domain.PaymentStatus) error {
 	err := s.db.WithTransaction(ctx, func(tx pgx.Tx) error {
 		if err := s.payments.WithTx(tx).MarkFailed(ctx, p.ID, reason, expectedStatus); err != nil {
@@ -208,6 +234,7 @@ func (s *PaymentService) failureFlow(ctx context.Context, p *domain.Payment, rea
 	return err
 }
 
+// failureFlow atomically marks a payment failed and releases the related claim.
 func (s *PaymentService) fetchInitData(ctx context.Context, claimID, custID string) (*domain.Claim, *domain.Customer, *domain.Event, error) {
 	claim, err := s.claims.GetByID(ctx, claimID)
 	if err != nil {
@@ -227,6 +254,7 @@ func (s *PaymentService) fetchInitData(ctx context.Context, claimID, custID stri
 	return claim, customer, event, nil
 }
 
+// validateClaimForPayment enforces claim ownership, freshness, and status checks.
 func (s *PaymentService) validateClaimForPayment(c *domain.Claim, customerID string) error {
 	if c.CustomerID != customerID {
 		return domain.ErrClaimNotFound
@@ -240,6 +268,7 @@ func (s *PaymentService) validateClaimForPayment(c *domain.Claim, customerID str
 	return nil
 }
 
+// validateClaimForPayment enforces claim ownership, freshness, and status checks.
 func (s *PaymentService) handleGatewayInitError(ctx context.Context, p *domain.Payment, err error, log *slog.Logger) error {
 	if errors.Is(err, paystack.ErrPermanent) {
 		if ferr := s.failureFlow(ctx, p, err.Error(), domain.PaymentStatusInitializing); ferr != nil {
@@ -251,6 +280,7 @@ func (s *PaymentService) handleGatewayInitError(ctx context.Context, p *domain.P
 	return fmt.Errorf("initialization failed transiently: %w", err)
 }
 
+// pollGatewayStatus verifies the gateway's latest transaction status for a pending payment.
 func (s *PaymentService) pollGatewayStatus(ctx context.Context, p *domain.Payment) error {
 	resp, err := s.gateway.VerifyTransaction(ctx, *p.Reference)
 	if err != nil {
@@ -267,6 +297,7 @@ func (s *PaymentService) pollGatewayStatus(ctx context.Context, p *domain.Paymen
 	}
 }
 
+// restoreInventoryBestEffort restores event inventory without failing the caller on errors.
 func (s *PaymentService) restoreInventoryBestEffort(ctx context.Context, claimID string) {
 	claim, err := s.claims.GetByID(ctx, claimID)
 	if err == nil {
@@ -276,6 +307,7 @@ func (s *PaymentService) restoreInventoryBestEffort(ctx context.Context, claimID
 	}
 }
 
+// parseWebhook extracts the event type and payment-relevant payload details.
 func (s *PaymentService) parseWebhook(payload []byte) (string, gateway.WebhookData, error) {
 	var raw struct {
 		Event string `json:"event"`
@@ -295,6 +327,7 @@ func (s *PaymentService) parseWebhook(payload []byte) (string, gateway.WebhookDa
 	}, nil
 }
 
+// processChargeSuccess confirms the payment referenced by a charge.success webhook.
 func (s *PaymentService) processChargeSuccess(ctx context.Context, d gateway.WebhookData) error {
 	p, err := s.payments.GetByReference(ctx, d.Reference)
 	if err != nil {
@@ -311,6 +344,7 @@ func (s *PaymentService) processChargeFailure(ctx context.Context, d gateway.Web
 	return s.failureFlow(ctx, p, d.GatewayResponse, domain.PaymentStatusPending)
 }
 
+// toGatewayRequest maps a payment and customer email to the gateway initialize request.
 func (s *PaymentService) toGatewayRequest(email string, p *domain.Payment) gateway.InitializeRequest {
 	return gateway.InitializeRequest{
 		Email:      email,
@@ -319,6 +353,7 @@ func (s *PaymentService) toGatewayRequest(email string, p *domain.Payment) gatew
 	}
 }
 
+// retryInitialization retries gateway initialization for stale initializing payments.
 func (s *PaymentService) retryInitialization(ctx context.Context, p *domain.Payment) error {
 	_, customer, _, err := s.fetchInitData(ctx, p.ClaimID, p.CustomerID)
 	if err != nil {
