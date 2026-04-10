@@ -1,0 +1,7 @@
+# oapi-codegen.yaml
+package: api
+generate:
+  chi-server: true
+  models: true
+  strict-server: true
+output: internal/api/generated.go
