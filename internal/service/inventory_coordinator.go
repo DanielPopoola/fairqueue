@@ -49,6 +49,18 @@ func (c *InventoryCoordinator) Acquire(ctx context.Context, key string) (acquire
 	return true, nil
 }
 
+// GetCount returns the current Redis inventory count.
+// Returns -1 on cache miss.
+func (c *InventoryCoordinator) GetCount(ctx context.Context, eventID string) (int64, error) {
+	return c.inventory.Get(ctx, eventID)
+}
+
+// WarmCache sets the inventory count using SET NX.
+// Returns true if the key was set, false if it already existed.
+func (c *InventoryCoordinator) WarmCache(ctx context.Context, eventID string, count int64) (bool, error) {
+	return c.inventory.Set(ctx, eventID, count)
+}
+
 // Release releases the lock for the given key.
 // Only called if the lock was actually acquired.
 func (c *InventoryCoordinator) Release(ctx context.Context, key string) {

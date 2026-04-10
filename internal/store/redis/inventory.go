@@ -13,7 +13,7 @@ const inventoryKeyFmt = "inventory:%s" // inventory:{event_id}
 // decrementIfAvailableScript atomically checks and decrements
 // inventory in a single Redis operation.
 //
-// Returns 1 if inventory was available and decremented.
+// Returns latest count if inventory was available and decremented.
 // Returns 0 if inventory was already at zero.
 var decrementIfAvailableScript = redis.NewScript(`
 	local count = redis.call("GET", KEYS[1])

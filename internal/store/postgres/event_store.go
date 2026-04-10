@@ -11,11 +11,11 @@ import (
 )
 
 type EventStore struct {
-	db *DB
+	exec Executor
 }
 
 func NewEventStore(db *DB) *EventStore {
-	return &EventStore{db: db}
+	return &EventStore{exec: db.Pool}
 }
 
 func (s *EventStore) Create(ctx context.Context, event *domain.Event) error {
@@ -27,7 +27,7 @@ func (s *EventStore) Create(ctx context.Context, event *domain.Event) error {
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 	`
 
-	_, err := s.db.Pool.Exec(ctx, query,
+	_, err := s.exec.Exec(ctx, query,
 		event.ID,
 		event.OrganizerID,
 		event.Name,
@@ -55,7 +55,7 @@ func (s *EventStore) GetByID(ctx context.Context, id string) (*domain.Event, err
 	`
 
 	var e domain.Event
-	err := s.db.Pool.QueryRow(ctx, query, id).Scan(
+	err := s.exec.QueryRow(ctx, query, id).Scan(
 		&e.ID,
 		&e.OrganizerID,
 		&e.Name,
@@ -77,13 +77,38 @@ func (s *EventStore) GetByID(ctx context.Context, id string) (*domain.Event, err
 	return &e, nil
 }
 
+func (s *EventStore) GetByStatus(ctx context.Context, status domain.EventStatus) ([]domain.Event, error) {
+	query := `
+		SELECT id, organizer_id, name, total_inventory,
+		       price_kobo, status, sale_start, sale_end,
+		       created_at, updated_at
+		FROM events
+		WHERE status = $1
+	`
+	rows, err := s.exec.Query(ctx, query, status)
+	if err != nil {
+		return nil, fmt.Errorf("querying events by status: %w", err)
+	}
+	defer rows.Close()
+
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (domain.Event, error) {
+		var e domain.Event
+		err := row.Scan(
+			&e.ID, &e.OrganizerID, &e.Name, &e.TotalInventory,
+			&e.Price, &e.Status, &e.SaleStart, &e.SaleEnd,
+			&e.CreatedAt, &e.UpdatedAt,
+		)
+		return e, err
+	})
+}
+
 func (s *EventStore) UpdateStatus(ctx context.Context, id string, status domain.EventStatus) error {
 	query := `
         UPDATE events
         SET status = $1, updated_at = $2
         WHERE id = $3`
 
-	result, err := s.db.Pool.Exec(ctx, query, status, time.Now(), id)
+	result, err := s.exec.Exec(ctx, query, status, time.Now(), id)
 	if err != nil {
 		return fmt.Errorf("updating event status: %w", err)
 	}

@@ -219,15 +219,11 @@ func TestPaymentService_HandleWebhook_Success_ConfirmsBoth(t *testing.T) {
 	}
 
 	db := postgres.NewDB(testPool)
-	p, _ := postgres.NewPaymentStore(db).GetByID(testCtx, payment.ID)
-	c, _ := postgres.NewClaimStore(db).GetByID(testCtx, claim.ID)
-
-	if p.Status != domain.PaymentStatusConfirmed {
-		t.Fatalf("expected payment CONFIRMED, got %s", p.Status)
-	}
-	if c.Status != domain.ClaimStatusConfirmed {
-		t.Fatalf("expected claim CONFIRMED, got %s", c.Status)
-	}
+	awaitWebhookEffects(t, func() bool {
+		p, _ := postgres.NewPaymentStore(db).GetByID(testCtx, payment.ID)
+		c, _ := postgres.NewClaimStore(db).GetByID(testCtx, claim.ID)
+		return p.Status == domain.PaymentStatusConfirmed && c.Status == domain.ClaimStatusConfirmed
+	})
 }
 
 func TestPaymentService_HandleWebhook_InvalidSignature_NoStateChange(t *testing.T) {
@@ -272,30 +268,22 @@ func TestPaymentService_HandleWebhook_Failure_ReleasesClaimAndRestoresInventory(
 	payment := seedPendingPayment(testCtx, t, testPool, claim.ID, customer.ID, ref)
 
 	// charge.failed payload — gateway_response carries the reason
-	payload := []byte(fmt.Sprintf(
+	payload := fmt.Appendf(nil,
 		`{"event":"charge.failed","data":{"reference":%q,"status":"failed","gateway_response":"Insufficient funds"}}`,
 		ref,
-	))
+	)
 
 	if err := svc.HandleWebhook(testCtx, payload, "valid-sig"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	db := postgres.NewDB(testPool)
-	p, _ := postgres.NewPaymentStore(db).GetByID(testCtx, payment.ID)
-	c, _ := postgres.NewClaimStore(db).GetByID(testCtx, claim.ID)
-
-	if p.Status != domain.PaymentStatusFailed {
-		t.Fatalf("expected FAILED, got %s", p.Status)
-	}
-	if c.Status != domain.ClaimStatusReleased {
-		t.Fatalf("expected claim RELEASED, got %s", c.Status)
-	}
-
-	count, _ := redisstore.NewInventoryStore(rc).Get(testCtx, claim.EventID)
-	if count != 6 {
-		t.Fatalf("expected inventory 6 after release, got %d", count)
-	}
+	awaitWebhookEffects(t, func() bool {
+		p, _ := postgres.NewPaymentStore(db).GetByID(testCtx, payment.ID)
+		c, _ := postgres.NewClaimStore(db).GetByID(testCtx, claim.ID)
+		count, _ := redisstore.NewInventoryStore(rc).Get(testCtx, claim.EventID)
+		return p.Status == domain.PaymentStatusFailed && c.Status == domain.ClaimStatusReleased && count == 6
+	})
 }
 
 func TestPaymentService_HandleWebhook_DuplicateSuccess_Idempotent(t *testing.T) {
@@ -322,10 +310,10 @@ func TestPaymentService_HandleWebhook_DuplicateSuccess_Idempotent(t *testing.T) 
 	}
 
 	db := postgres.NewDB(testPool)
-	p, _ := postgres.NewPaymentStore(db).GetByClaimID(testCtx, claim.ID)
-	if p.Status != domain.PaymentStatusConfirmed {
-		t.Fatalf("expected CONFIRMED after duplicate webhook, got %s", p.Status)
-	}
+	awaitWebhookEffects(t, func() bool {
+		p, _ := postgres.NewPaymentStore(db).GetByClaimID(testCtx, claim.ID)
+		return p.Status == domain.PaymentStatusConfirmed
+	})
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -371,10 +359,10 @@ func TestPaymentService_DoubleConfirmRace_BothReturnNil(t *testing.T) {
 	}
 
 	db := postgres.NewDB(testPool)
-	p, _ := postgres.NewPaymentStore(db).GetByClaimID(testCtx, claim.ID)
-	if p.Status != domain.PaymentStatusConfirmed {
-		t.Fatalf("expected CONFIRMED, got %s", p.Status)
-	}
+	awaitWebhookEffects(t, func() bool {
+		p, _ := postgres.NewPaymentStore(db).GetByClaimID(testCtx, claim.ID)
+		return p.Status == domain.PaymentStatusConfirmed
+	})
 }
 
 func TestPaymentService_Initialize_UserDoubleClick_ReturnsSameRecord(t *testing.T) {
@@ -400,9 +388,7 @@ func TestPaymentService_Initialize_UserDoubleClick_ReturnsSameRecord(t *testing.
 	)
 
 	for range 5 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			r, err := svc.Initialize(testCtx, claim.ID, customer.ID)
 			mu.Lock()
 			defer mu.Unlock()
@@ -411,7 +397,7 @@ func TestPaymentService_Initialize_UserDoubleClick_ReturnsSameRecord(t *testing.
 			} else {
 				results = append(results, r)
 			}
-		}()
+		})
 	}
 
 	wg.Wait()
@@ -582,4 +568,17 @@ func webhookPayload(event, reference string) []byte {
 		`{"event":%q,"data":{"reference":%q,"status":"success","gateway_response":"Approved"}}`,
 		event, reference,
 	))
+}
+
+func awaitWebhookEffects(t *testing.T, check func() bool) {
+	t.Helper()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if check() {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("timed out waiting for asynchronous webhook effects")
 }
