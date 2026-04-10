@@ -141,5 +141,9 @@ the database tests that you called a mock correctly, not that the system works.
   protection but determined operators can still abuse it.
 - **Seat selection:** General admission only. Specific seats require a different
   inventory model.
-- **Multi-tenancy isolation:** Key namespacing provides logical isolation. True
-  resource isolation requires separate Redis instances per event.
+- **Multi-tenancy isolation:** Key namespacing provides logical isolation only.
+Under concurrent high-demand events, a single Redis instance creates resource
+contention — one large event can saturate the command queue and degrade all
+others. The fix when needed is Redis Cluster with hash tags, which is a key
+format change, not an application change. Current key format uses event_id
+as prefix and is already compatible with this migration.

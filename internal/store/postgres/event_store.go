@@ -77,6 +77,31 @@ func (s *EventStore) GetByID(ctx context.Context, id string) (*domain.Event, err
 	return &e, nil
 }
 
+func (s *EventStore) GetByStatus(ctx context.Context, status domain.EventStatus) ([]domain.Event, error) {
+	query := `
+		SELECT id, organizer_id, name, total_inventory,
+		       price_kobo, status, sale_start, sale_end,
+		       created_at, updated_at
+		FROM events
+		WHERE status = $1
+	`
+	rows, err := s.exec.Query(ctx, query, status)
+	if err != nil {
+		return nil, fmt.Errorf("querying events by status: %w", err)
+	}
+	defer rows.Close()
+
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (domain.Event, error) {
+		var e domain.Event
+		err := row.Scan(
+			&e.ID, &e.OrganizerID, &e.Name, &e.TotalInventory,
+			&e.Price, &e.Status, &e.SaleStart, &e.SaleEnd,
+			&e.CreatedAt, &e.UpdatedAt,
+		)
+		return e, err
+	})
+}
+
 func (s *EventStore) UpdateStatus(ctx context.Context, id string, status domain.EventStatus) error {
 	query := `
         UPDATE events

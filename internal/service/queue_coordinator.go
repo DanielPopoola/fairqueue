@@ -161,7 +161,7 @@ func (c *QueueCoordinator) AdmitNextBatch(ctx context.Context, eventID string, n
 }
 
 // EvictExpired removes customers whose admission window has expired.
-// Called by the eviction worker.
+// Called by worker.
 func (c *QueueCoordinator) EvictExpired(ctx context.Context, eventID string, admissionTTL time.Duration) ([]string, error) {
 	evicted, err := c.redisQueue.EvictExpiredAdmitted(ctx, eventID, admissionTTL)
 	if err != nil {
