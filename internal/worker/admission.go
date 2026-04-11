@@ -5,13 +5,16 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/DanielPopoola/fairqueue/internal/api"
 	"github.com/DanielPopoola/fairqueue/internal/auth"
 	"github.com/DanielPopoola/fairqueue/internal/config"
 	"github.com/DanielPopoola/fairqueue/internal/domain"
 	"github.com/DanielPopoola/fairqueue/internal/service"
 	postgres "github.com/DanielPopoola/fairqueue/internal/store/postgres"
 )
+
+type Notifier interface {
+	NotifyAdmitted(ctx context.Context, customerID, token string, logger *slog.Logger) bool
+}
 
 // AdmissionWorker runs on every tick for each ACTIVE event:
 //  1. Evict admitted customers whose window has expired.
@@ -24,7 +27,7 @@ type AdmissionWorker struct {
 	queue     *service.QueueCoordinator
 	inventory *service.InventoryCoordinator
 	tokenizer *auth.Tokenizer
-	hub       *api.Hub
+	notifier  Notifier
 	cfg       config.AdmissionWorkerConfig
 	logger    *slog.Logger
 }
@@ -34,7 +37,7 @@ func NewAdmissionWorker(
 	queue *service.QueueCoordinator,
 	inventory *service.InventoryCoordinator,
 	tokenizer *auth.Tokenizer,
-	hub *api.Hub,
+	notifier Notifier,
 	cfg config.AdmissionWorkerConfig,
 	logger *slog.Logger,
 ) *AdmissionWorker {
@@ -43,7 +46,7 @@ func NewAdmissionWorker(
 		queue:     queue,
 		inventory: inventory,
 		tokenizer: tokenizer,
-		hub:       hub,
+		notifier:  notifier,
 		cfg:       cfg,
 		logger:    logger,
 	}
@@ -136,7 +139,7 @@ func (w *AdmissionWorker) notifyAdmitted(ctx context.Context, eventID string, cu
 			continue // one bad token must not block others
 		}
 
-		w.hub.NotifyAdmitted(ctx, customerID, token, w.logger)
+		w.notifier.NotifyAdmitted(ctx, customerID, token, w.logger)
 	}
 	return nil
 }

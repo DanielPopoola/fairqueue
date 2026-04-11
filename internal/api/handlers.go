@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 
 	"github.com/DanielPopoola/fairqueue/internal/auth"
 	"github.com/DanielPopoola/fairqueue/internal/domain"
@@ -308,6 +309,11 @@ func (h *Handlers) CreateEvent(w http.ResponseWriter, r *http.Request) {
 // @Failure     500      {object}  ErrorResponse
 // @Router      /events/{eventId} [get]
 func (h *Handlers) GetEvent(w http.ResponseWriter, r *http.Request) {
+	eventID := chi.URLParam(r, "eventId")
+	if _, err := uuid.Parse(eventID); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "eventId must be a valid UUID")
+		return
+	}
 	event, err := h.events.Get(r.Context(), chi.URLParam(r, "eventId"))
 	if err != nil {
 		if errors.Is(err, domain.ErrEventNotFound) {
@@ -342,6 +348,12 @@ func (h *Handlers) ActivateEvent(w http.ResponseWriter, r *http.Request) {
 	organizerID, ok := organizerIDFromCtx(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "authentication required")
+		return
+	}
+
+	eventID := chi.URLParam(r, "eventId")
+	if _, err := uuid.Parse(eventID); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "eventId must be a valid UUID")
 		return
 	}
 
@@ -384,6 +396,12 @@ func (h *Handlers) EndEvent(w http.ResponseWriter, r *http.Request) {
 	organizerID, ok := organizerIDFromCtx(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "authentication required")
+		return
+	}
+
+	eventID := chi.URLParam(r, "eventId")
+	if _, err := uuid.Parse(eventID); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "eventId must be a valid UUID")
 		return
 	}
 
@@ -430,6 +448,12 @@ func (h *Handlers) JoinQueue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	eventID := chi.URLParam(r, "eventId")
+	if _, err := uuid.Parse(eventID); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "eventId must be a valid UUID")
+		return
+	}
+
 	result, err := h.queueSvc.Join(r.Context(), customerID, chi.URLParam(r, "eventId"))
 	if err != nil {
 		switch {
@@ -467,6 +491,12 @@ func (h *Handlers) GetQueuePosition(w http.ResponseWriter, r *http.Request) {
 	customerID, ok := customerIDFromCtx(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "authentication required")
+		return
+	}
+
+	eventID := chi.URLParam(r, "eventId")
+	if _, err := uuid.Parse(eventID); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "eventId must be a valid UUID")
 		return
 	}
 
@@ -523,6 +553,12 @@ func (h *Handlers) AbandonQueue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	eventID := chi.URLParam(r, "eventId")
+	if _, err := uuid.Parse(eventID); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "eventId must be a valid UUID")
+		return
+	}
+
 	if err := h.queueSvc.Abandon(r.Context(), customerID, chi.URLParam(r, "eventId")); err != nil {
 		switch {
 		case errors.Is(err, domain.ErrQueueEntryNotFound):
@@ -560,6 +596,12 @@ func (h *Handlers) ClaimTicket(w http.ResponseWriter, r *http.Request) {
 	_, ok := customerIDFromCtx(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "authentication required")
+		return
+	}
+
+	eventID := chi.URLParam(r, "eventId")
+	if _, err := uuid.Parse(eventID); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "eventId must be a valid UUID")
 		return
 	}
 
@@ -613,6 +655,10 @@ func (h *Handlers) ReleaseClaim(w http.ResponseWriter, r *http.Request) {
 	}
 
 	claimID := chi.URLParam(r, "claimId")
+	if _, err := uuid.Parse(claimID); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "claimId must be a valid UUID")
+		return
+	}
 
 	claim, err := h.claims.GetByID(r.Context(), claimID)
 	if err != nil {
@@ -664,6 +710,10 @@ func (h *Handlers) InitializePayment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	claimID := chi.URLParam(r, "claimId")
+	if _, err := uuid.Parse(claimID); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "claimId must be a valid UUID")
+		return
+	}
 
 	claim, err := h.claims.GetByID(r.Context(), claimID)
 	if err != nil {
@@ -936,4 +986,10 @@ func derefString(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+func (h *Handlers) WithHealthDeps(db, rdb interface{ Ping(context.Context) error }) *Handlers {
+	h.db = db
+	h.rdb = rdb
+	return h
 }

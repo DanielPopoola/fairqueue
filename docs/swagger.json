@@ -1,0 +1,1127 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "Fair inventory allocation for high-demand live events in Nigeria.",
+        "title": "FairQueue API",
+        "contact": {},
+        "version": "1.0"
+    },
+    "host": "localhost:8080",
+    "basePath": "/",
+    "paths": {
+        "/auth/customer/otp/request": {
+            "post": {
+                "description": "Sends a 6-digit OTP to the customer's email. Creates account if needed.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Request OTP",
+                "parameters": [
+                    {
+                        "description": "Email",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.OTPRequestBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.MessageResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/customer/otp/verify": {
+            "post": {
+                "description": "Validates the OTP and returns a customer JWT",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Verify OTP",
+                "parameters": [
+                    {
+                        "description": "Email and OTP",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.OTPVerifyRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.CustomerAuthResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/organizer/login": {
+            "post": {
+                "description": "Authenticates an organizer and returns a JWT",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Organizer login",
+                "parameters": [
+                    {
+                        "description": "Credentials",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.OrganizerLoginRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.AuthResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/claims/{claimId}": {
+            "delete": {
+                "security": [
+                    {
+                        "CustomerAuth": []
+                    }
+                ],
+                "description": "Explicitly releases a claim before the TTL expires. Restores inventory.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Claims"
+                ],
+                "summary": "Release a claim",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Claim ID (UUID)",
+                        "name": "claimId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/claims/{claimId}/payments": {
+            "post": {
+                "security": [
+                    {
+                        "CustomerAuth": []
+                    }
+                ],
+                "description": "Creates a Paystack transaction for a claim. Idempotent — safe to call multiple times.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Payments"
+                ],
+                "summary": "Initialize payment",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Claim ID (UUID)",
+                        "name": "claimId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/api.PaymentInitResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/events": {
+            "post": {
+                "security": [
+                    {
+                        "OrganizerAuth": []
+                    }
+                ],
+                "description": "Creates a new event in DRAFT status",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Events"
+                ],
+                "summary": "Create event",
+                "parameters": [
+                    {
+                        "description": "Event details",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.CreateEventRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/api.EventResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/events/{eventId}": {
+            "get": {
+                "description": "Returns event details by ID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Events"
+                ],
+                "summary": "Get event",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Event ID (UUID)",
+                        "name": "eventId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.EventResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/events/{eventId}/activate": {
+            "put": {
+                "security": [
+                    {
+                        "OrganizerAuth": []
+                    }
+                ],
+                "description": "Transitions event from DRAFT to ACTIVE",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Events"
+                ],
+                "summary": "Activate event",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Event ID (UUID)",
+                        "name": "eventId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.EventResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/events/{eventId}/claims": {
+            "post": {
+                "security": [
+                    {
+                        "CustomerAuth": []
+                    }
+                ],
+                "description": "Claims a ticket using a valid admission token. Customer has 10 minutes to pay.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Claims"
+                ],
+                "summary": "Claim a ticket",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Event ID (UUID)",
+                        "name": "eventId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Admission token",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.ClaimRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/api.ClaimResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/events/{eventId}/end": {
+            "put": {
+                "security": [
+                    {
+                        "OrganizerAuth": []
+                    }
+                ],
+                "description": "Transitions event from ACTIVE or SOLD_OUT to ENDED",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Events"
+                ],
+                "summary": "End event",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Event ID (UUID)",
+                        "name": "eventId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.EventResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/events/{eventId}/queue": {
+            "post": {
+                "security": [
+                    {
+                        "CustomerAuth": []
+                    }
+                ],
+                "description": "Adds the authenticated customer to the waiting queue",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Queue"
+                ],
+                "summary": "Join queue",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Event ID (UUID)",
+                        "name": "eventId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/api.QueueJoinResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "CustomerAuth": []
+                    }
+                ],
+                "description": "Removes the customer from the waiting queue. Only WAITING entries can be abandoned.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Queue"
+                ],
+                "summary": "Abandon queue",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Event ID (UUID)",
+                        "name": "eventId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/events/{eventId}/queue/position": {
+            "get": {
+                "security": [
+                    {
+                        "CustomerAuth": []
+                    }
+                ],
+                "description": "Returns the customer's current position. Returns admission token when admitted.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Queue"
+                ],
+                "summary": "Get queue position",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Event ID (UUID)",
+                        "name": "eventId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.QueuePositionResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/health": {
+            "get": {
+                "description": "Returns Postgres and Redis connectivity status",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "System"
+                ],
+                "summary": "Health check",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.HealthResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/api.HealthResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/webhooks/paystack": {
+            "post": {
+                "description": "Receives charge.success and charge.failed events from Paystack",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Payments"
+                ],
+                "summary": "Paystack webhook",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "HMAC-SHA512 signature",
+                        "name": "x-paystack-signature",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/ws/queue/{eventId}": {
+            "get": {
+                "description": "Upgrade to WebSocket for live queue position updates. Pass JWT as ?token= query param.",
+                "tags": [
+                    "Queue"
+                ],
+                "summary": "Queue position WebSocket",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Event ID (UUID)",
+                        "name": "eventId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Customer JWT",
+                        "name": "token",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "101": {
+                        "description": "Switching Protocols"
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "api.AuthResponse": {
+            "type": "object",
+            "properties": {
+                "organizer_id": {
+                    "type": "string"
+                },
+                "success": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "token": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.ClaimRequest": {
+            "type": "object",
+            "properties": {
+                "admission_token": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.ClaimResponse": {
+            "type": "object",
+            "properties": {
+                "claim_id": {
+                    "type": "string"
+                },
+                "event_id": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "success": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "api.CreateEventRequest": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "example": "Burna Boy Live in Lagos"
+                },
+                "price": {
+                    "type": "integer",
+                    "example": 25000
+                },
+                "sale_end": {
+                    "type": "string"
+                },
+                "sale_start": {
+                    "type": "string"
+                },
+                "total_inventory": {
+                    "type": "integer",
+                    "example": 5000
+                }
+            }
+        },
+        "api.CustomerAuthResponse": {
+            "type": "object",
+            "properties": {
+                "customer_id": {
+                    "type": "string"
+                },
+                "success": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "token": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.ErrorDetail": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "example": "NOT_FOUND"
+                },
+                "message": {
+                    "type": "string",
+                    "example": "event not found"
+                }
+            }
+        },
+        "api.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "$ref": "#/definitions/api.ErrorDetail"
+                },
+                "success": {
+                    "type": "boolean",
+                    "example": false
+                }
+            }
+        },
+        "api.EventData": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "organizer_id": {
+                    "type": "string"
+                },
+                "price": {
+                    "type": "integer"
+                },
+                "sale_end": {
+                    "type": "string"
+                },
+                "sale_start": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "total_inventory": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.EventResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/api.EventData"
+                },
+                "success": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "api.HealthResponse": {
+            "type": "object",
+            "properties": {
+                "postgres": {
+                    "type": "string",
+                    "example": "ok"
+                },
+                "redis": {
+                    "type": "string",
+                    "example": "ok"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "healthy"
+                }
+            }
+        },
+        "api.MessageResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "example": "OTP sent to your email"
+                },
+                "success": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "api.OTPRequestBody": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "example": "customer@example.com"
+                }
+            }
+        },
+        "api.OTPVerifyRequest": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "example": "customer@example.com"
+                },
+                "otp": {
+                    "type": "string",
+                    "example": "482910"
+                }
+            }
+        },
+        "api.OrganizerLoginRequest": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "example": "organizer@example.com"
+                },
+                "password": {
+                    "type": "string",
+                    "example": "supersecret"
+                }
+            }
+        },
+        "api.PaymentInitResponse": {
+            "type": "object",
+            "properties": {
+                "authorization_url": {
+                    "type": "string"
+                },
+                "payment_id": {
+                    "type": "string"
+                },
+                "reference": {
+                    "type": "string"
+                },
+                "success": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "api.QueueJoinResponse": {
+            "type": "object",
+            "properties": {
+                "event_id": {
+                    "type": "string"
+                },
+                "position": {
+                    "type": "integer",
+                    "example": 1547
+                },
+                "queue_entry_id": {
+                    "type": "string"
+                },
+                "success": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "api.QueuePositionResponse": {
+            "type": "object",
+            "properties": {
+                "admission_token": {
+                    "type": "string"
+                },
+                "position": {
+                    "type": "integer",
+                    "example": 847
+                },
+                "status": {
+                    "type": "string",
+                    "example": "WAITING"
+                },
+                "success": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        }
+    },
+    "securityDefinitions": {
+        "CustomerAuth": {
+            "description": "JWT issued on OTP verification. Format: Bearer {token}",
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
+        },
+        "OrganizerAuth": {
+            "description": "JWT issued on organizer login. Format: Bearer {token}",
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
+        }
+    }
+}

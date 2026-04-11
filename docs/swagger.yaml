@@ -1,0 +1,744 @@
+basePath: /
+definitions:
+  api.AuthResponse:
+    properties:
+      organizer_id:
+        type: string
+      success:
+        example: true
+        type: boolean
+      token:
+        type: string
+    type: object
+  api.ClaimRequest:
+    properties:
+      admission_token:
+        type: string
+    type: object
+  api.ClaimResponse:
+    properties:
+      claim_id:
+        type: string
+      event_id:
+        type: string
+      expires_at:
+        type: string
+      success:
+        example: true
+        type: boolean
+    type: object
+  api.CreateEventRequest:
+    properties:
+      name:
+        example: Burna Boy Live in Lagos
+        type: string
+      price:
+        example: 25000
+        type: integer
+      sale_end:
+        type: string
+      sale_start:
+        type: string
+      total_inventory:
+        example: 5000
+        type: integer
+    type: object
+  api.CustomerAuthResponse:
+    properties:
+      customer_id:
+        type: string
+      success:
+        example: true
+        type: boolean
+      token:
+        type: string
+    type: object
+  api.ErrorDetail:
+    properties:
+      code:
+        example: NOT_FOUND
+        type: string
+      message:
+        example: event not found
+        type: string
+    type: object
+  api.ErrorResponse:
+    properties:
+      error:
+        $ref: '#/definitions/api.ErrorDetail'
+      success:
+        example: false
+        type: boolean
+    type: object
+  api.EventData:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      organizer_id:
+        type: string
+      price:
+        type: integer
+      sale_end:
+        type: string
+      sale_start:
+        type: string
+      status:
+        type: string
+      total_inventory:
+        type: integer
+      updated_at:
+        type: string
+    type: object
+  api.EventResponse:
+    properties:
+      data:
+        $ref: '#/definitions/api.EventData'
+      success:
+        example: true
+        type: boolean
+    type: object
+  api.HealthResponse:
+    properties:
+      postgres:
+        example: ok
+        type: string
+      redis:
+        example: ok
+        type: string
+      status:
+        example: healthy
+        type: string
+    type: object
+  api.MessageResponse:
+    properties:
+      message:
+        example: OTP sent to your email
+        type: string
+      success:
+        example: true
+        type: boolean
+    type: object
+  api.OTPRequestBody:
+    properties:
+      email:
+        example: customer@example.com
+        type: string
+    type: object
+  api.OTPVerifyRequest:
+    properties:
+      email:
+        example: customer@example.com
+        type: string
+      otp:
+        example: "482910"
+        type: string
+    type: object
+  api.OrganizerLoginRequest:
+    properties:
+      email:
+        example: organizer@example.com
+        type: string
+      password:
+        example: supersecret
+        type: string
+    type: object
+  api.PaymentInitResponse:
+    properties:
+      authorization_url:
+        type: string
+      payment_id:
+        type: string
+      reference:
+        type: string
+      success:
+        example: true
+        type: boolean
+    type: object
+  api.QueueJoinResponse:
+    properties:
+      event_id:
+        type: string
+      position:
+        example: 1547
+        type: integer
+      queue_entry_id:
+        type: string
+      success:
+        example: true
+        type: boolean
+    type: object
+  api.QueuePositionResponse:
+    properties:
+      admission_token:
+        type: string
+      position:
+        example: 847
+        type: integer
+      status:
+        example: WAITING
+        type: string
+      success:
+        example: true
+        type: boolean
+    type: object
+host: localhost:8080
+info:
+  contact: {}
+  description: Fair inventory allocation for high-demand live events in Nigeria.
+  title: FairQueue API
+  version: "1.0"
+paths:
+  /auth/customer/otp/request:
+    post:
+      consumes:
+      - application/json
+      description: Sends a 6-digit OTP to the customer's email. Creates account if
+        needed.
+      parameters:
+      - description: Email
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.OTPRequestBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.MessageResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      summary: Request OTP
+      tags:
+      - Auth
+  /auth/customer/otp/verify:
+    post:
+      consumes:
+      - application/json
+      description: Validates the OTP and returns a customer JWT
+      parameters:
+      - description: Email and OTP
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.OTPVerifyRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.CustomerAuthResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      summary: Verify OTP
+      tags:
+      - Auth
+  /auth/organizer/login:
+    post:
+      consumes:
+      - application/json
+      description: Authenticates an organizer and returns a JWT
+      parameters:
+      - description: Credentials
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.OrganizerLoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.AuthResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      summary: Organizer login
+      tags:
+      - Auth
+  /claims/{claimId}:
+    delete:
+      description: Explicitly releases a claim before the TTL expires. Restores inventory.
+      parameters:
+      - description: Claim ID (UUID)
+        in: path
+        name: claimId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - CustomerAuth: []
+      summary: Release a claim
+      tags:
+      - Claims
+  /claims/{claimId}/payments:
+    post:
+      description: Creates a Paystack transaction for a claim. Idempotent — safe to
+        call multiple times.
+      parameters:
+      - description: Claim ID (UUID)
+        in: path
+        name: claimId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/api.PaymentInitResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - CustomerAuth: []
+      summary: Initialize payment
+      tags:
+      - Payments
+  /events:
+    post:
+      consumes:
+      - application/json
+      description: Creates a new event in DRAFT status
+      parameters:
+      - description: Event details
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.CreateEventRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/api.EventResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - OrganizerAuth: []
+      summary: Create event
+      tags:
+      - Events
+  /events/{eventId}:
+    get:
+      description: Returns event details by ID
+      parameters:
+      - description: Event ID (UUID)
+        in: path
+        name: eventId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.EventResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      summary: Get event
+      tags:
+      - Events
+  /events/{eventId}/activate:
+    put:
+      description: Transitions event from DRAFT to ACTIVE
+      parameters:
+      - description: Event ID (UUID)
+        in: path
+        name: eventId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.EventResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - OrganizerAuth: []
+      summary: Activate event
+      tags:
+      - Events
+  /events/{eventId}/claims:
+    post:
+      consumes:
+      - application/json
+      description: Claims a ticket using a valid admission token. Customer has 10
+        minutes to pay.
+      parameters:
+      - description: Event ID (UUID)
+        in: path
+        name: eventId
+        required: true
+        type: string
+      - description: Admission token
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.ClaimRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/api.ClaimResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "410":
+          description: Gone
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - CustomerAuth: []
+      summary: Claim a ticket
+      tags:
+      - Claims
+  /events/{eventId}/end:
+    put:
+      description: Transitions event from ACTIVE or SOLD_OUT to ENDED
+      parameters:
+      - description: Event ID (UUID)
+        in: path
+        name: eventId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.EventResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - OrganizerAuth: []
+      summary: End event
+      tags:
+      - Events
+  /events/{eventId}/queue:
+    delete:
+      description: Removes the customer from the waiting queue. Only WAITING entries
+        can be abandoned.
+      parameters:
+      - description: Event ID (UUID)
+        in: path
+        name: eventId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - CustomerAuth: []
+      summary: Abandon queue
+      tags:
+      - Queue
+    post:
+      description: Adds the authenticated customer to the waiting queue
+      parameters:
+      - description: Event ID (UUID)
+        in: path
+        name: eventId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/api.QueueJoinResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - CustomerAuth: []
+      summary: Join queue
+      tags:
+      - Queue
+  /events/{eventId}/queue/position:
+    get:
+      description: Returns the customer's current position. Returns admission token
+        when admitted.
+      parameters:
+      - description: Event ID (UUID)
+        in: path
+        name: eventId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.QueuePositionResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - CustomerAuth: []
+      summary: Get queue position
+      tags:
+      - Queue
+  /health:
+    get:
+      description: Returns Postgres and Redis connectivity status
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.HealthResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/api.HealthResponse'
+      summary: Health check
+      tags:
+      - System
+  /webhooks/paystack:
+    post:
+      consumes:
+      - application/json
+      description: Receives charge.success and charge.failed events from Paystack
+      parameters:
+      - description: HMAC-SHA512 signature
+        in: header
+        name: x-paystack-signature
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      summary: Paystack webhook
+      tags:
+      - Payments
+  /ws/queue/{eventId}:
+    get:
+      description: Upgrade to WebSocket for live queue position updates. Pass JWT
+        as ?token= query param.
+      parameters:
+      - description: Event ID (UUID)
+        in: path
+        name: eventId
+        required: true
+        type: string
+      - description: Customer JWT
+        in: query
+        name: token
+        required: true
+        type: string
+      responses:
+        "101":
+          description: Switching Protocols
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      summary: Queue position WebSocket
+      tags:
+      - Queue
+securityDefinitions:
+  CustomerAuth:
+    description: 'JWT issued on OTP verification. Format: Bearer {token}'
+    in: header
+    name: Authorization
+    type: apiKey
+  OrganizerAuth:
+    description: 'JWT issued on organizer login. Format: Bearer {token}'
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

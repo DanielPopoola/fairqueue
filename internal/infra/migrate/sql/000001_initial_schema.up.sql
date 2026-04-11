@@ -3,10 +3,11 @@
 -- ============================================================
 -- ORGANIZERS
 -- ============================================================
-CREATE TABLE organizers (
+CREATE EXTENSION IF NOT EXISTS citext;
+CREATE TABLE IF NOT EXISTS organizers (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name          VARCHAR(255) NOT NULL,
-    email         VARCHAR(255) NOT NULL UNIQUE,
+    email         CITEXT NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -14,16 +15,16 @@ CREATE TABLE organizers (
 -- ============================================================
 -- CUSTOMERS
 -- ============================================================
-CREATE TABLE customers (
+CREATE TABLE IF NOT EXISTS customers (
     id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    email      VARCHAR(255) NOT NULL UNIQUE,
+    email      CITEXT NOT NULL UNIQUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- ============================================================
 -- EVENTS
 -- ============================================================
-CREATE TABLE events (
+CREATE TABLE IF NOT EXISTS events (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     organizer_id    UUID NOT NULL REFERENCES organizers(id) ON DELETE RESTRICT,
     name            VARCHAR(255) NOT NULL,
@@ -38,13 +39,13 @@ CREATE TABLE events (
     CONSTRAINT chk_sale_dates CHECK (sale_end > sale_start)
 );
 
-CREATE INDEX idx_events_organizer_id ON events(organizer_id);
-CREATE INDEX idx_events_status ON events(status);
+CREATE INDEX IF NOT EXISTS idx_events_organizer_id ON events(organizer_id);
+CREATE INDEX IF NOT EXISTS idx_events_status ON events(status);
 
 -- ============================================================
 -- CLAIMS
 -- ============================================================
-CREATE TABLE claims (
+CREATE TABLE IF NOT EXISTS claims (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     event_id    UUID NOT NULL REFERENCES events(id) ON DELETE RESTRICT,
     customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
@@ -53,17 +54,17 @@ CREATE TABLE claims (
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_claims_event_id ON claims(event_id);
-CREATE INDEX idx_claims_customer_id ON claims(customer_id);
+CREATE INDEX IF NOT EXISTS idx_claims_event_id ON claims(event_id);
+CREATE INDEX IF NOT EXISTS idx_claims_customer_id ON claims(customer_id);
 
-CREATE UNIQUE INDEX idx_claims_active_per_customer_event
+CREATE UNIQUE INDEX IF NOT EXISTS idx_claims_active_per_customer_event
     ON claims(customer_id, event_id)
     WHERE status = 'CLAIMED';
 
 -- ============================================================
 -- QUEUE ENTRIES
 -- ============================================================
-CREATE TABLE queue_entries (
+CREATE TABLE IF NOT EXISTS queue_entries (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     event_id    UUID NOT NULL REFERENCES events(id) ON DELETE RESTRICT,
     customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
@@ -73,17 +74,17 @@ CREATE TABLE queue_entries (
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_queue_entries_event_id ON queue_entries(event_id);
-CREATE INDEX idx_queue_entries_customer_id ON queue_entries(customer_id);
+CREATE INDEX IF NOT EXISTS idx_queue_entries_event_id ON queue_entries(event_id);
+CREATE INDEX IF NOT EXISTS idx_queue_entries_customer_id ON queue_entries(customer_id);
 
-CREATE UNIQUE INDEX idx_queue_active_per_customer_event
+CREATE UNIQUE INDEX IF NOT EXISTS idx_queue_active_per_customer_event
     ON queue_entries(customer_id, event_id)
     WHERE status IN ('WAITING', 'ADMITTED');
 
 -- ============================================================
 -- PAYMENTS
 -- ============================================================
-CREATE TABLE payments (
+CREATE TABLE IF NOT EXISTS payments (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     claim_id            UUID NOT NULL REFERENCES claims(id) ON DELETE RESTRICT,
     customer_id         UUID NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
@@ -96,9 +97,9 @@ CREATE TABLE payments (
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE UNIQUE INDEX idx_payments_one_per_claim ON payments(claim_id);
-CREATE INDEX idx_payments_customer_id ON payments(customer_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_one_per_claim ON payments(claim_id);
+CREATE INDEX IF NOT EXISTS idx_payments_customer_id ON payments(customer_id);
 
-CREATE INDEX idx_payments_status_updated_at
+CREATE INDEX IF NOT EXISTS idx_payments_status_updated_at
     ON payments(status, updated_at)
     WHERE status IN ('INITIALIZING', 'PENDING');
