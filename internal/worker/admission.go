@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/DanielPopoola/fairqueue/internal/api"
 	"github.com/DanielPopoola/fairqueue/internal/auth"
 	"github.com/DanielPopoola/fairqueue/internal/config"
 	"github.com/DanielPopoola/fairqueue/internal/domain"
@@ -23,6 +24,7 @@ type AdmissionWorker struct {
 	queue     *service.QueueCoordinator
 	inventory *service.InventoryCoordinator
 	tokenizer *auth.Tokenizer
+	hub       *api.Hub
 	cfg       config.AdmissionWorkerConfig
 	logger    *slog.Logger
 }
@@ -32,6 +34,7 @@ func NewAdmissionWorker(
 	queue *service.QueueCoordinator,
 	inventory *service.InventoryCoordinator,
 	tokenizer *auth.Tokenizer,
+	hub *api.Hub,
 	cfg config.AdmissionWorkerConfig,
 	logger *slog.Logger,
 ) *AdmissionWorker {
@@ -40,6 +43,7 @@ func NewAdmissionWorker(
 		queue:     queue,
 		inventory: inventory,
 		tokenizer: tokenizer,
+		hub:       hub,
 		cfg:       cfg,
 		logger:    logger,
 	}
@@ -119,8 +123,7 @@ func (w *AdmissionWorker) calculateBatchSize(ctx context.Context, event *domain.
 }
 
 // notifyAdmitted generates a signed admission token for each admitted
-// customer and sends it to them. The send is stubbed here — Phase 4
-// replaces the log line with a WebSocket push.
+// customer and sends it to them.
 func (w *AdmissionWorker) notifyAdmitted(ctx context.Context, eventID string, customerIDs []string) error {
 	for _, customerID := range customerIDs {
 		token, err := w.tokenizer.Generate(customerID, eventID)
@@ -133,14 +136,7 @@ func (w *AdmissionWorker) notifyAdmitted(ctx context.Context, eventID string, cu
 			continue // one bad token must not block others
 		}
 
-		// TODO(Phase 4): push token to customer via WebSocket.
-		// For now, log it so we can verify the worker is functioning
-		// in integration tests without a WebSocket layer.
-		w.logger.Info("admission token generated",
-			"customer_id", customerID,
-			"event_id", eventID,
-			"token", token,
-		)
+		w.hub.NotifyAdmitted(ctx, customerID, token, w.logger)
 	}
 	return nil
 }
