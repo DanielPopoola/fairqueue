@@ -60,6 +60,12 @@ func (c *QueueCoordinator) Join(ctx context.Context, entry *domain.QueueEntry) e
 // GetPosition returns the customer's current position in the queue.
 // Reads from Redis for speed — falls back to Postgres on cache miss.
 func (c *QueueCoordinator) GetPosition(ctx context.Context, eventID, customerID string) (int64, error) {
+	// Check admitted ZSET first — if they're here, position is 0 (admitted)
+	admitted, err := c.redisQueue.IsAdmitted(ctx, eventID, customerID)
+	if err == nil && admitted {
+		return 0, nil
+	}
+
 	pos, err := c.redisQueue.GetPosition(ctx, eventID, customerID)
 	if err != nil {
 		return 0, fmt.Errorf("getting position from redis: %w", err)

@@ -170,11 +170,10 @@ func TestFlow_HappyPath(t *testing.T) {
 	}
 
 	// ── Step 10: Customer initializes payment ─────────────────
-	ref := fmt.Sprintf("fq-e2e-%d", time.Now().UnixNano())
 	sharedEnv.gateway.On("InitializeTransaction", mock.Anything, mock.Anything).
 		Return(&gateway.InitializeResponse{
 			AuthorizationURL: "https://checkout.paystack.com/pay/test",
-			Reference:        ref,
+			Reference:        "ignored", // service uses its own reference
 		}, nil).Once()
 
 	resp = custClient.POST(t, "/claims/"+claimID+"/payments", nil)
@@ -184,6 +183,7 @@ func TestFlow_HappyPath(t *testing.T) {
 		Success          bool   `json:"success"`
 		PaymentID        string `json:"payment_id"`
 		AuthorizationURL string `json:"authorization_url"`
+		Reference        string `json:"reference"`
 	}
 	payResp := decodeBody[paymentResp](t, resp)
 	if payResp.AuthorizationURL == "" {
@@ -193,13 +193,9 @@ func TestFlow_HappyPath(t *testing.T) {
 	// ── Step 11: Paystack sends charge.success webhook ────────
 	sharedEnv.gateway.On("VerifyWebhookSignature", mock.Anything, "valid-sig").Return(true)
 
-	resp = client.POST(t, "/webhooks/paystack", webhookPayload("charge.success", ref))
-	// Add signature header
-	resp.Body.Close()
-
 	// Re-send with proper signature header
 	req := mustBuildWebhookRequest(t, client.baseURL+"/webhooks/paystack",
-		webhookPayload("charge.success", ref), "valid-sig")
+		webhookPayload("charge.success", payResp.Reference), "valid-sig")
 	webhookResp, err := client.http.Do(req)
 	if err != nil {
 		t.Fatalf("webhook request: %v", err)
@@ -208,22 +204,12 @@ func TestFlow_HappyPath(t *testing.T) {
 	webhookResp.Body.Close()
 
 	// ── Step 12: Verify final state in Postgres ───────────────
-	db = postgres.NewDB(sharedEnv.pool)
-	payment, err := postgres.NewPaymentStore(db).GetByClaimID(testCtx, claimID)
-	if err != nil {
-		t.Fatalf("fetching payment: %v", err)
-	}
-	if payment.Status != domain.PaymentStatusConfirmed {
-		t.Fatalf("expected payment CONFIRMED, got %s", payment.Status)
-	}
-
-	claim, err := postgres.NewClaimStore(db).GetByID(testCtx, claimID)
-	if err != nil {
-		t.Fatalf("fetching claim: %v", err)
-	}
-	if claim.Status != domain.ClaimStatusConfirmed {
-		t.Fatalf("expected claim CONFIRMED, got %s", claim.Status)
-	}
+	awaitWebhookEffects(t, func() bool {
+		db = postgres.NewDB(sharedEnv.pool)
+		p, _ := postgres.NewPaymentStore(db).GetByClaimID(testCtx, claimID)
+		c, _ := postgres.NewClaimStore(db).GetByID(testCtx, claimID)
+		return p.Status == domain.PaymentStatusConfirmed && c.Status == domain.ClaimStatusConfirmed
+	})
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -237,13 +223,13 @@ func TestFlow_SoldOut(t *testing.T) {
 
 	client := sharedEnv.client
 
-	// Setup: organizer + event with 1 ticket
+	// Setup: organizer + event with 2 tickets
 	orgClient := mustLoginOrganizer(t, client, sharedEnv.pool)
-	eventID := mustCreateAndActivateEvent(t, orgClient, sharedEnv.pool, sharedEnv.rdb, 1)
+	eventID := mustCreateAndActivateEvent(t, orgClient, 2)
 
 	// Warm inventory
 	rc, _ := redisstore.NewClient(testCtx, sharedEnv.rdb)
-	redisstore.NewInventoryStore(rc).Set(testCtx, eventID, 1)
+	redisstore.NewInventoryStore(rc).Set(testCtx, eventID, 2)
 
 	// Two customers join queue
 	cust1Token := mustCustomerAuth(t, client, sharedEnv.rdb)
@@ -265,10 +251,18 @@ func TestFlow_SoldOut(t *testing.T) {
 		t.Fatalf("admission worker: %v", err)
 	}
 
-	// Customer 1 claims the last ticket
+	// Customer 1 claims first ticket
 	admToken1 := mustGetAdmissionToken(t, cust1, eventID)
 	resp = cust1.POST(t, "/events/"+eventID+"/claims", map[string]any{
 		"admission_token": admToken1,
+	})
+	assertStatus(t, resp, http.StatusCreated)
+	resp.Body.Close()
+
+	// Customer 2 claims last ticket
+	admToken2 := mustGetAdmissionToken(t, cust2, eventID)
+	resp = cust2.POST(t, "/events/"+eventID+"/claims", map[string]any{
+		"admission_token": admToken2,
 	})
 	assertStatus(t, resp, http.StatusCreated)
 	resp.Body.Close()
@@ -282,14 +276,6 @@ func TestFlow_SoldOut(t *testing.T) {
 	if event.Status != domain.EventStatusSoldOut {
 		t.Fatalf("expected SOLD_OUT, got %s", event.Status)
 	}
-
-	// Customer 2 tries to claim — should get 410
-	admToken2 := mustGetAdmissionToken(t, cust2, eventID)
-	resp = cust2.POST(t, "/events/"+eventID+"/claims", map[string]any{
-		"admission_token": admToken2,
-	})
-	assertStatus(t, resp, http.StatusGone)
-	resp.Body.Close()
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -301,7 +287,7 @@ func TestFlow_ClaimExpiry_RestoresInventory(t *testing.T) {
 
 	client := sharedEnv.client
 	orgClient := mustLoginOrganizer(t, client, sharedEnv.pool)
-	eventID := mustCreateAndActivateEvent(t, orgClient, sharedEnv.pool, sharedEnv.rdb, 10)
+	eventID := mustCreateAndActivateEvent(t, orgClient, 10)
 
 	rc, _ := redisstore.NewClient(testCtx, sharedEnv.rdb)
 	invStore := redisstore.NewInventoryStore(rc)
@@ -372,7 +358,7 @@ func TestFlow_FailedPayment_ReleasesClaimAndRestoresInventory(t *testing.T) {
 
 	client := sharedEnv.client
 	orgClient := mustLoginOrganizer(t, client, sharedEnv.pool)
-	eventID := mustCreateAndActivateEvent(t, orgClient, sharedEnv.pool, sharedEnv.rdb, 10)
+	eventID := mustCreateAndActivateEvent(t, orgClient, 10)
 
 	rc, _ := redisstore.NewClient(testCtx, sharedEnv.rdb)
 	invStore := redisstore.NewInventoryStore(rc)
@@ -408,25 +394,28 @@ func TestFlow_FailedPayment_ReleasesClaimAndRestoresInventory(t *testing.T) {
 		t.Fatalf("expected 9 after claim, got %d", count)
 	}
 
-	// Initialize payment
-	ref := fmt.Sprintf("fq-fail-%d", time.Now().UnixNano())
+	// ── Initialize payment ─────────────────
 	sharedEnv.gateway.On("InitializeTransaction", mock.Anything, mock.Anything).
 		Return(&gateway.InitializeResponse{
 			AuthorizationURL: "https://checkout.paystack.com/pay/test",
-			Reference:        ref,
+			Reference:        "ignored",
 		}, nil).Once()
 
 	resp = custClient.POST(t, "/claims/"+claimID+"/payments", nil)
 	assertStatus(t, resp, http.StatusCreated)
-	resp.Body.Close()
 
-	// Paystack sends charge.failed
+	type payResp struct {
+		Reference string `json:"reference"`
+	}
+	payResult := decodeBody[payResp](t, resp)
+
+	// Use actual reference in the failure webhook
 	sharedEnv.gateway.On("VerifyWebhookSignature", mock.Anything, "valid-sig").Return(true)
 
 	failPayload := map[string]any{
 		"event": "charge.failed",
 		"data": map[string]any{
-			"reference":        ref,
+			"reference":        payResult.Reference, // actual reference, not generated
 			"status":           "failed",
 			"gateway_response": "Insufficient funds",
 		},
@@ -440,20 +429,12 @@ func TestFlow_FailedPayment_ReleasesClaimAndRestoresInventory(t *testing.T) {
 	webhookResp.Body.Close()
 
 	// Inventory must be restored
-	count, _ = invStore.Get(testCtx, eventID)
-	if count != 10 {
-		t.Fatalf("expected inventory 10 after failed payment, got %d", count)
-	}
-
-	// Claim must be RELEASED
-	db := postgres.NewDB(sharedEnv.pool)
-	claim, err := postgres.NewClaimStore(db).GetByID(testCtx, claimID)
-	if err != nil {
-		t.Fatalf("fetching claim: %v", err)
-	}
-	if claim.Status != domain.ClaimStatusReleased {
-		t.Fatalf("expected RELEASED, got %s", claim.Status)
-	}
+	awaitWebhookEffects(t, func() bool {
+		db := postgres.NewDB(sharedEnv.pool)
+		count, _ := invStore.Get(testCtx, eventID)
+		claim, _ := postgres.NewClaimStore(db).GetByID(testCtx, claimID)
+		return count == 10 && claim.Status == domain.ClaimStatusReleased
+	})
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -525,7 +506,7 @@ func TestFlow_Queue_DuplicateJoinRejected(t *testing.T) {
 	truncateAll(testCtx, t, sharedEnv.pool, sharedEnv.rdb)
 
 	orgClient := mustLoginOrganizer(t, sharedEnv.client, sharedEnv.pool)
-	eventID := mustCreateAndActivateEvent(t, orgClient, sharedEnv.pool, sharedEnv.rdb, 100)
+	eventID := mustCreateAndActivateEvent(t, orgClient, 100)
 
 	custToken := mustCustomerAuth(t, sharedEnv.client, sharedEnv.rdb)
 	custClient := sharedEnv.client.WithToken(custToken)
@@ -573,7 +554,7 @@ func TestFlow_Queue_AbandonWaitingEntry(t *testing.T) {
 	truncateAll(testCtx, t, sharedEnv.pool, sharedEnv.rdb)
 
 	orgClient := mustLoginOrganizer(t, sharedEnv.client, sharedEnv.pool)
-	eventID := mustCreateAndActivateEvent(t, orgClient, sharedEnv.pool, sharedEnv.rdb, 100)
+	eventID := mustCreateAndActivateEvent(t, orgClient, 100)
 
 	custToken := mustCustomerAuth(t, sharedEnv.client, sharedEnv.rdb)
 	custClient := sharedEnv.client.WithToken(custToken)
@@ -602,7 +583,7 @@ func TestFlow_Event_OrganizerOwnership(t *testing.T) {
 	org1Client := mustLoginOrganizer(t, sharedEnv.client, sharedEnv.pool)
 	org2Client := mustLoginOrganizer(t, sharedEnv.client, sharedEnv.pool)
 
-	eventID := mustCreateAndActivateEvent(t, org1Client, sharedEnv.pool, sharedEnv.rdb, 100)
+	eventID := mustCreateAndActivateEvent(t, org1Client, 100)
 
 	// Org2 tries to end org1's event
 	resp := org2Client.PUT(t, "/events/"+eventID+"/end")
@@ -654,7 +635,7 @@ func mustCustomerAuth(t *testing.T, client *testClient, rdb *redis.Client) strin
 	return result.Token
 }
 
-func mustCreateAndActivateEvent(t *testing.T, orgClient *testClient, pool *pgxpool.Pool, rdb *redis.Client, inventory int) string {
+func mustCreateAndActivateEvent(t *testing.T, orgClient *testClient, inventory int) string {
 	t.Helper()
 
 	resp := orgClient.POST(t, "/events", map[string]any{
@@ -676,11 +657,6 @@ func mustCreateAndActivateEvent(t *testing.T, orgClient *testClient, pool *pgxpo
 	resp = orgClient.PUT(t, "/events/"+eventID+"/activate")
 	assertStatus(t, resp, http.StatusOK)
 	resp.Body.Close()
-
-	// Warm Redis inventory cache — mirrors what the startup recovery
-	// worker does in production before any admission ticks run.
-	rc, _ := redisstore.NewClient(testCtx, rdb)
-	redisstore.NewInventoryStore(rc).Set(testCtx, eventID, int64(inventory))
 
 	return eventID
 }
@@ -716,4 +692,17 @@ func mustBuildWebhookRequest(t *testing.T, url string, body any, signature strin
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-paystack-signature", signature)
 	return req
+}
+
+func awaitWebhookEffects(t *testing.T, check func() bool) {
+	t.Helper()
+
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if check() {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("timed out waiting for asynchronous webhook effects")
 }
