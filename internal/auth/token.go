@@ -3,7 +3,6 @@ package auth
 
 import (
 	"crypto/hmac"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -54,7 +53,7 @@ func (t *Tokenizer) Generate(customerID, eventID string) (string, error) {
 	}
 
 	encodedPayload := base64.RawURLEncoding.EncodeToString(payloadBytes)
-	sig := t.sign(encodedPayload)
+	sig := computeHMAC(t.secret, encodedPayload)
 
 	return encodedPayload + "." + sig, nil
 }
@@ -71,7 +70,7 @@ func (t *Tokenizer) Verify(token string) (customerID, eventID string, err error)
 
 	// Recompute signature and compare — this is the cryptographic check.
 	// If someone tampered with the payload, the signatures won't match.
-	expected := t.sign(encodedPayload)
+	expected := computeHMAC(t.secret, encodedPayload)
 	if !hmac.Equal([]byte(sig), []byte(expected)) {
 		return "", "", ErrTokenInvalid
 	}
@@ -91,13 +90,4 @@ func (t *Tokenizer) Verify(token string) (customerID, eventID string, err error)
 	}
 
 	return payload.CustomerID, payload.EventID, nil
-}
-
-// sign computes an HMAC-SHA256 signature of the given data.
-// Private because callers should use Generate and Verify,
-// never sign directly.
-func (t *Tokenizer) sign(data string) string {
-	mac := hmac.New(sha256.New, t.secret)
-	mac.Write([]byte(data))
-	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 }
