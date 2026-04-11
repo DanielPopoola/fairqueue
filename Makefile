@@ -45,8 +45,12 @@ lint:
 
 # ── Docker ───────────────────────────────────────────────────
 
-docker-up:
+docker-build:
 	docker compose up --build -d
+	
+
+docker-up:
+	docker compose up -d
 	@echo "FairQueue running at http://localhost:8080"
 	@echo "Swagger UI at http://localhost:8080/swagger/index.html"
 
