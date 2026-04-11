@@ -26,7 +26,7 @@ func NewEventService(events *postgres.EventStore, logger *slog.Logger) *EventSer
 }
 
 // Create validates input, converts NGN to kobo, and persists a new DRAFT event.
-func (s *EventService) Create(ctx context.Context, organizerID string, req CreateEventRequest) (*domain.Event, error) {
+func (s *EventService) Create(ctx context.Context, organizerID string, req *CreateEventRequest) (*domain.Event, error) {
 	if req.TotalInventory < 1 {
 		return nil, fmt.Errorf("total_inventory must be at least 1: %w", domain.ErrInvalidInput)
 	}

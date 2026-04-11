@@ -94,9 +94,8 @@ func CheckPassword(encodedHash, password string) error {
 }
 
 // decodeHash parses the encoded argon2id hash string back into its components.
-func decodeHash(encoded string) (Argon2Params, []byte, []byte, error) {
+func decodeHash(encoded string) (params Argon2Params, salt, hash []byte, err error) {
 	parts := strings.Split(encoded, "$")
-	// Expected: ["", "argon2id", "v=19", "m=65536,t=3,p=2", "<salt>", "<hash>"]
 	if len(parts) != 6 {
 		return Argon2Params{}, nil, nil, errors.New("invalid hash format")
 	}
@@ -109,23 +108,22 @@ func decodeHash(encoded string) (Argon2Params, []byte, []byte, error) {
 		return Argon2Params{}, nil, nil, fmt.Errorf("incompatible argon2 version: %d", version)
 	}
 
-	var p Argon2Params
-	if _, err := fmt.Sscanf(parts[3], "m=%d,t=%d,p=%d", &p.Memory, &p.Iterations, &p.Parallelism); err != nil {
+	if _, err := fmt.Sscanf(parts[3], "m=%d,t=%d,p=%d", &params.Memory, &params.Iterations, &params.Parallelism); err != nil {
 		return Argon2Params{}, nil, nil, fmt.Errorf("parsing params: %w", err)
 	}
 
-	salt, err := base64.RawStdEncoding.DecodeString(parts[4])
+	salt, err = base64.RawStdEncoding.DecodeString(parts[4])
 	if err != nil {
 		return Argon2Params{}, nil, nil, fmt.Errorf("decoding salt: %w", err)
 	}
 
-	hash, err := base64.RawStdEncoding.DecodeString(parts[5])
+	hash, err = base64.RawStdEncoding.DecodeString(parts[5])
 	if err != nil {
 		return Argon2Params{}, nil, nil, fmt.Errorf("decoding hash: %w", err)
 	}
 
-	p.KeyLength = uint32(len(hash))
-	return p, salt, hash, nil
+	params.KeyLength = uint32(len(hash)) //nolint:gosec // argon2 hashes are small making overflow impossible
+	return params, salt, hash, nil
 }
 
 // organizerClaims is the payload inside an organizer JWT.
@@ -177,7 +175,7 @@ type CustomerTokenizer struct {
 	admission *Tokenizer // reuses existing admission token logic
 }
 
-func NewCustomerTokenizer(secret string, ttl time.Duration, admissionTTL time.Duration) *CustomerTokenizer {
+func NewCustomerTokenizer(secret string, ttl, admissionTTL time.Duration) *CustomerTokenizer {
 	return &CustomerTokenizer{
 		secret:    []byte(secret),
 		ttl:       ttl,
@@ -245,12 +243,6 @@ func verifyPayload(secret []byte, token string, dst any) error {
 
 	if err := json.Unmarshal(payloadBytes, dst); err != nil {
 		return ErrTokenInvalid
-	}
-
-	// Check expiry — works for any struct with ExpiresAt field via
-	// a small interface rather than reflection.
-	type hasExpiry interface {
-		isExpired() bool
 	}
 
 	// Direct expiry check via type switch — cleaner than reflection
