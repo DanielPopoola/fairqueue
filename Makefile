@@ -18,6 +18,10 @@ test-unit:
 test-integration:
 	go test ./internal/store/... ./internal/service/... ./internal/worker/... -timeout 120s
 
+
+# E2E tests
+test-e2e:
+	go test ./internal/e2e/... -v -timeout 180s
 # All tests
 test:
 	go test ./... -timeout 120s
