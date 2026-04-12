@@ -51,3 +51,16 @@ func (c *Client) Del(ctx context.Context, keys ...string) error {
 	}
 	return nil
 }
+
+// Pinger wraps the raw Redis client to satisfy the health check interface.
+type Pinger struct {
+	rdb *redis.Client
+}
+
+func NewPinger(rdb *redis.Client) *Pinger {
+	return &Pinger{rdb: rdb}
+}
+
+func (p *Pinger) Ping(ctx context.Context) error {
+	return p.rdb.Ping(ctx).Err()
+}

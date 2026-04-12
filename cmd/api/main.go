@@ -161,7 +161,7 @@ func run() error {
 		otpStore,
 		hub,
 		logger,
-	)
+	).WithHealthDeps(pgPool, redisstore.NewPinger(rdb))
 
 	router := api.NewRouter(handlers, orgTokenizer, custTokenizer)
 

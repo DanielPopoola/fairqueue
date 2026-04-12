@@ -65,7 +65,7 @@ func (h *Hub) send(ctx context.Context, customerID string, msg WSMessage) bool {
 	}
 
 	if err := wsjson.Write(ctx, conn, msg); err != nil {
-		h.remove(customerID)
+		h.remove(customerID, conn)
 		return false
 	}
 	return true
@@ -77,10 +77,12 @@ func (h *Hub) register(customerID string, conn *websocket.Conn) {
 	h.conns[customerID] = conn
 }
 
-func (h *Hub) remove(customerID string) {
+func (h *Hub) remove(customerID string, conn *websocket.Conn) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	delete(h.conns, customerID)
+	if h.conns[customerID] == conn {
+		delete(h.conns, customerID)
+	}
 }
 
 // ServeWS upgrades the connection, registers it, and blocks until it closes.
@@ -96,7 +98,7 @@ func (h *Hub) ServeWS(ctx context.Context, w http.ResponseWriter, r *http.Reques
 	defer conn.CloseNow() //nolint:errcheck // error check not necessary here
 
 	h.register(customerID, conn)
-	defer h.remove(customerID)
+	defer h.remove(customerID, conn)
 
 	logger.Info("websocket connected", "customer_id", customerID)
 

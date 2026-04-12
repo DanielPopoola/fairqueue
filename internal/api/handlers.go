@@ -520,13 +520,17 @@ func (h *Handlers) GetQueuePosition(w http.ResponseWriter, r *http.Request) {
 	// for customers who missed the WebSocket push or reconnected.
 	if position == 0 {
 		resp.Status = "ADMITTED"
-		token, err := h.custTokens.GenerateAdmission(customerID, chi.URLParam(r, "eventId"))
-		if err != nil {
-			h.logger.Warn("failed to generate admission token on position poll",
-				"customer_id", customerID, "error", err,
-			)
-		} else {
-			resp.AdmissionToken = &token
+		// Only generate token if still within admission window in Postgres
+		entry, err := h.queueSvc.GetAdmittedEntry(r.Context(), customerID, chi.URLParam(r, "eventId"))
+		if err == nil && !entry.IsExpired() {
+			token, err := h.custTokens.GenerateAdmission(customerID, chi.URLParam(r, "eventId"))
+			if err != nil {
+				h.logger.Warn("failed to generate admission token on position poll",
+					"customer_id", customerID, "error", err,
+				)
+			} else {
+				resp.AdmissionToken = &token
+			}
 		}
 	}
 
@@ -593,7 +597,7 @@ func (h *Handlers) AbandonQueue(w http.ResponseWriter, r *http.Request) {
 // @Failure     500      {object}  ErrorResponse
 // @Router      /events/{eventId}/claims [post]
 func (h *Handlers) ClaimTicket(w http.ResponseWriter, r *http.Request) {
-	_, ok := customerIDFromCtx(r.Context())
+	customerID, ok := customerIDFromCtx(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "authentication required")
 		return
@@ -608,6 +612,17 @@ func (h *Handlers) ClaimTicket(w http.ResponseWriter, r *http.Request) {
 	var req ClaimRequest
 	if err := decode(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", err.Error())
+		return
+	}
+
+	// Verify token belongs to the authenticated customer before passing to service
+	tokenCustomerID, _, err := h.claimSvc.VerifyAdmissionToken(req.AdmissionToken)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "ADMISSION_TOKEN_EXPIRED", err.Error())
+		return
+	}
+	if tokenCustomerID != customerID {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "admission token does not belong to you")
 		return
 	}
 
