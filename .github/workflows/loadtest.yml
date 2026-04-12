@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
+      
       - name: Start load test server
         uses: appleboy/ssh-action@v1
         with:
@@ -28,19 +28,13 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           fingerprint: ${{ secrets.VPS_SSH_FINGERPRINT }}
-          # Increase timeout — migrations run on startup
           command_timeout: 120s
           script: |
             cd ~/fairqueue-loadtest
-
-            # Write env file from secret
             echo "${{ secrets.LOADTEST_ENV_FILE }}" > .env
-
-            # Pull latest image and start stack
             docker compose -f docker-compose.loadtest.yml pull
             docker compose -f docker-compose.loadtest.yml up -d
 
-            # Wait for server to be healthy — up to 90 seconds
             echo "Waiting for load test server to be ready..."
             for i in $(seq 1 45); do
               STATUS=$(curl -sf -o /dev/null -w "%{http_code}" \
@@ -57,7 +51,6 @@ jobs:
               sleep 2
             done
 
-            # Seed organizer — idempotent, safe to call multiple times
             SEED_STATUS=$(curl -sf -o /dev/null -w "%{http_code}" \
               -X POST http://localhost:8082/loadtest/seed)
             if [ "$SEED_STATUS" != "200" ]; then
@@ -67,7 +60,7 @@ jobs:
             echo "Seed complete"
 
   run-loadtest:
-    needs: deploy-loadtest-server
+    needs: deploy-loadtest-server  # waits for server to be ready
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -75,6 +68,7 @@ jobs:
       - name: Install k6
         uses: grafana/setup-k6-action@v1
 
+      
       - name: Run load test scenario
         run: |
           case "${{ inputs.scenario }}" in
@@ -94,14 +88,19 @@ jobs:
             -e ORGANIZER_EMAIL=loadtest@admin.com \
             -e ORGANIZER_PASSWORD=loadtest-password \
             -e EVENT_ID=${{ inputs.event_id }} \
+            --out experimental-prometheus-rw \
+            --tag scenario=${{ inputs.scenario }} \
             $SCRIPT
+        env:
+          K6_PROMETHEUS_RW_SERVER_URL: https://api.tulcanvcm.com/prometheus/api/v1/write
+          K6_PROMETHEUS_RW_TREND_STATS: p(50),p(90),p(95),p(99),max,min
+          K6_PROMETHEUS_RW_USERNAME: k6
+          K6_PROMETHEUS_RW_PASSWORD: ${{ secrets.PROMETHEUS_REMOTE_WRITE_PASSWORD }}
 
   teardown-loadtest-server:
-    # Depends on deploy, not run-loadtest, so it always runs
-    # even if the load test itself fails or is skipped
-    needs: deploy-loadtest-server
+    needs: run-loadtest   # waits for load test to finish
     runs-on: ubuntu-latest
-    if: always()
+    if: always()          # runs even if run-loadtest fails or is cancelled
     steps:
       - name: Stop and clean up load test server
         uses: appleboy/ssh-action@v1
