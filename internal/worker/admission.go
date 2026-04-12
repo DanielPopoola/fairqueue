@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/DanielPopoola/fairqueue/internal/auth"
 	"github.com/DanielPopoola/fairqueue/internal/config"
 	"github.com/DanielPopoola/fairqueue/internal/domain"
+	"github.com/DanielPopoola/fairqueue/internal/metrics"
 	"github.com/DanielPopoola/fairqueue/internal/service"
 	postgres "github.com/DanielPopoola/fairqueue/internal/store/postgres"
 )
@@ -53,6 +55,10 @@ func NewAdmissionWorker(
 }
 
 func (w *AdmissionWorker) Run(ctx context.Context) error {
+	start := time.Now()
+	defer func() {
+		metrics.WorkerTickDuration.WithLabelValues("admission").Observe(time.Since(start).Seconds())
+	}()
 	events, err := w.events.GetByStatus(ctx, domain.EventStatusActive)
 	if err != nil {
 		return fmt.Errorf("fetching active events: %w", err)
@@ -128,6 +134,7 @@ func (w *AdmissionWorker) calculateBatchSize(ctx context.Context, event *domain.
 // notifyAdmitted generates a signed admission token for each admitted
 // customer and sends it to them.
 func (w *AdmissionWorker) notifyAdmitted(ctx context.Context, eventID string, customerIDs []string) error {
+	metrics.QueueAdmittedTotal.WithLabelValues(eventID).Add(float64(len(customerIDs)))
 	for _, customerID := range customerIDs {
 		token, err := w.tokenizer.Generate(customerID, eventID)
 		if err != nil {
