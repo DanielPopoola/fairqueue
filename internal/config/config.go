@@ -58,9 +58,8 @@ type AuthConfig struct {
 }
 
 type PaystackConfig struct {
-	SecretKey     string `koanf:"secret_key"      validate:"required"`
-	WebhookSecret string `koanf:"webhook_secret"  validate:"required"`
-	BaseURL       string `koanf:"base_url"        validate:"required,url"`
+	SecretKey string `koanf:"secret_key"      validate:"required"`
+	BaseURL   string `koanf:"base_url"        validate:"required,url"`
 }
 
 type RetryConfig struct {
