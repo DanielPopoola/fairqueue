@@ -8,8 +8,8 @@ export const options = {
         { duration: '3m', target: 0 },      // ramp down
     ],
     thresholds: {
-        'http_req_duration{name:join_queue}': ['p99<500'],
-        'http_req_duration{name:claim_ticket}': ['p99<500'],
+        'http_req_duration{name:join_queue}': ['p(99)<500'],
+        'http_req_duration{name:claim_ticket}': ['p(99)<500'],
         'http_req_failed': ['rate<0.01'],
     },
 };

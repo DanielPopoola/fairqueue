@@ -12,7 +12,7 @@ export const options = {
     ],
     thresholds: {
         // 99% of queue join requests must complete under 500ms
-        'http_req_duration{name:join_queue}': ['p99<500'],
+       'http_req_duration{name:join_queue}': ['p(99)<500'],
         // Less than 1% of requests should fail
         'http_req_failed': ['rate<0.01'],
     },

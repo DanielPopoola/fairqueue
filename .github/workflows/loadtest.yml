@@ -19,84 +19,62 @@ jobs:
   deploy-loadtest-server:
     runs-on: ubuntu-latest
     steps:
-      - name: Start load test server on VPS
+      - uses: actions/checkout@v4
+
+      - name: Copy compose file to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          fingerprint: ${{ secrets.VPS_SSH_FINGERPRINT }}
+          source: docker-compose.loadtest.yml
+          target: ~/fairqueue-loadtest/
+
+      - name: Start load test server
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           fingerprint: ${{ secrets.VPS_SSH_FINGERPRINT }}
+          # Increase timeout — migrations run on startup
+          command_timeout: 120s
           script: |
-            mkdir -p ~/fairqueue-loadtest
             cd ~/fairqueue-loadtest
 
-            # Write the env file
+            # Write env file from secret
             echo "${{ secrets.LOADTEST_ENV_FILE }}" > .env
 
-            # Write the compose file inline so we don't need to clone the repo
-            cat > docker-compose.loadtest.yml << 'EOF'
-            services:
-              loadtest-app:
-                image: ghcr.io/danielpopoola/fairqueue-loadtest:latest
-                ports:
-                  - "8082:8082"
-                env_file:
-                  - .env
-                environment:
-                  DATABASE__HOST: loadtest-postgres
-                  REDIS__HOST: loadtest-redis
-                depends_on:
-                  loadtest-postgres:
-                    condition: service_healthy
-                  loadtest-redis:
-                    condition: service_healthy
-                restart: unless-stopped
-
-              loadtest-postgres:
-                image: postgres:16-alpine
-                environment:
-                  POSTGRES_USER: fairqueue
-                  POSTGRES_PASSWORD: fairqueue
-                  POSTGRES_DB: fairqueue_loadtest
-                volumes:
-                  - loadtest_postgres_data:/var/lib/postgresql/data
-                healthcheck:
-                  test: ["CMD-SHELL", "pg_isready -U fairqueue -d fairqueue_loadtest"]
-                  interval: 5s
-                  timeout: 5s
-                  retries: 5
-
-              loadtest-redis:
-                image: redis:7-alpine
-                volumes:
-                  - loadtest_redis_data:/data
-                healthcheck:
-                  test: ["CMD", "redis-cli", "ping"]
-                  interval: 5s
-                  timeout: 5s
-                  retries: 5
-
-            volumes:
-              loadtest_postgres_data:
-              loadtest_redis_data:
-            EOF
-
-            # Pull latest image and start
+            # Pull latest image and start stack
             docker compose -f docker-compose.loadtest.yml pull
             docker compose -f docker-compose.loadtest.yml up -d
 
-            # Wait for server to be ready
-            echo "Waiting for load test server..."
-            for i in $(seq 1 30); do
-              if curl -sf http://localhost:8082/health > /dev/null; then
-                echo "Server ready"
+            # Wait for server to be healthy — up to 90 seconds
+            echo "Waiting for load test server to be ready..."
+            for i in $(seq 1 45); do
+              STATUS=$(curl -sf -o /dev/null -w "%{http_code}" \
+                http://localhost:8082/health || echo "000")
+              if [ "$STATUS" = "200" ]; then
+                echo "Server ready after $((i * 2)) seconds"
                 break
+              fi
+              if [ $i -eq 45 ]; then
+                echo "Server did not become ready in time"
+                docker compose -f docker-compose.loadtest.yml logs loadtest-app
+                exit 1
               fi
               sleep 2
             done
 
-            # Seed the organizer
-            curl -sf -X POST http://localhost:8082/loadtest/seed
+            # Seed organizer — idempotent, safe to call multiple times
+            SEED_STATUS=$(curl -sf -o /dev/null -w "%{http_code}" \
+              -X POST http://localhost:8082/loadtest/seed)
+            if [ "$SEED_STATUS" != "200" ]; then
+              echo "Seed failed with status $SEED_STATUS"
+              exit 1
+            fi
+            echo "Seed complete"
 
   run-loadtest:
     needs: deploy-loadtest-server
@@ -109,13 +87,17 @@ jobs:
 
       - name: Run load test scenario
         run: |
-          SCRIPT="loadtest/scripts/01_thundering_herd.js"
-
-          if [ "${{ inputs.scenario }}" = "sustained_load" ]; then
-            SCRIPT="loadtest/scripts/02_sustained_load.js"
-          elif [ "${{ inputs.scenario }}" = "correctness_check" ]; then
-            SCRIPT="loadtest/scripts/03_correctness_check.js"
-          fi
+          case "${{ inputs.scenario }}" in
+            thundering_herd)
+              SCRIPT="loadtest/scripts/01_thundering_herd.js"
+              ;;
+            sustained_load)
+              SCRIPT="loadtest/scripts/02_sustained_load.js"
+              ;;
+            correctness_check)
+              SCRIPT="loadtest/scripts/03_correctness_check.js"
+              ;;
+          esac
 
           k6 run \
             -e BASE_URL=https://loadtest-api.tulcanvcm.com \
@@ -125,7 +107,9 @@ jobs:
             $SCRIPT
 
   teardown-loadtest-server:
-    needs: run-loadtest
+    # Depends on deploy, not run-loadtest, so it always runs
+    # even if the load test itself fails or is skipped
+    needs: deploy-loadtest-server
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -139,3 +123,4 @@ jobs:
           script: |
             cd ~/fairqueue-loadtest
             docker compose -f docker-compose.loadtest.yml down -v
+            echo "Load test stack torn down"
