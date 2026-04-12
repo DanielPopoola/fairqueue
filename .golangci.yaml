@@ -65,6 +65,14 @@ linters:
           - govet
           - staticcheck
 
+      - path: 'loadtest/'
+        linters:
+          - errcheck
+          - gocritic
+          - gosec
+          - govet
+          - staticcheck
+
       - path: 'e2e/'
         linters:
           - errcheck

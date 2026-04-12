@@ -1,0 +1,25 @@
+FROM golang:1.25-alpine AS builder
+
+WORKDIR /app
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+RUN go run github.com/swaggo/swag/cmd/swag@latest init -g internal/api/server.go -o docs/api/
+
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /fairqueue-loadtest ./cmd/loadtest
+
+
+FROM alpine:3.20
+
+RUN apk --no-cache add ca-certificates tzdata
+
+WORKDIR /app
+
+COPY --from=builder /fairqueue-loadtest ./fairqueue-loadtest
+
+EXPOSE 8082
+
+ENTRYPOINT ["./fairqueue-loadtest"]
