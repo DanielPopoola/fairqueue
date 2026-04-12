@@ -7,7 +7,7 @@ RUN go mod download
 
 COPY . .
 
-RUN go run github.com/swaggo/swag/cmd/swag@latest init -g internal/api/server.go -o docs/
+RUN go run github.com/swaggo/swag/cmd/swag@latest init -g internal/api/server.go -o docs/api/
 
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /fairqueue ./cmd/api
 

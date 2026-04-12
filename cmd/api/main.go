@@ -27,7 +27,7 @@ import (
 	"syscall"
 	"time"
 
-	_ "github.com/DanielPopoola/fairqueue/docs"
+	_ "github.com/DanielPopoola/fairqueue/docs/api"
 	"github.com/DanielPopoola/fairqueue/internal/api"
 	"github.com/DanielPopoola/fairqueue/internal/auth"
 	"github.com/DanielPopoola/fairqueue/internal/config"
