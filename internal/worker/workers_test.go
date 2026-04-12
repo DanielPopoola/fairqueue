@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
+	"github.com/DanielPopoola/fairqueue/internal/api"
 	"github.com/DanielPopoola/fairqueue/internal/auth"
 	"github.com/DanielPopoola/fairqueue/internal/config"
 	"github.com/DanielPopoola/fairqueue/internal/domain"
@@ -283,8 +284,9 @@ func TestAdmissionWorker_AdmitsCorrectBatchSize(t *testing.T) {
 	seedWaitingCustomers(testCtx, t, event.ID, 20)
 
 	tokenizer := auth.NewTokenizer("test-secret-key-that-is-at-least-32-chars", 5*time.Minute)
+	hub := api.NewHub()
 	w := worker.NewAdmissionWorker(
-		eventStores, qCoord, inv, tokenizer,
+		eventStores, qCoord, inv, tokenizer, hub,
 		config.AdmissionWorkerConfig{BatchSize: 10},
 		testhelpers.NewTestLogger(),
 	)
@@ -331,8 +333,9 @@ func TestAdmissionWorker_BatchCappedByInventory(t *testing.T) {
 	seedWaitingCustomers(testCtx, t, event.ID, 10)
 
 	tokenizer := auth.NewTokenizer("test-secret-key-that-is-at-least-32-chars", 5*time.Minute)
+	hub := api.NewHub()
 	w := worker.NewAdmissionWorker(
-		eventStores, qCoord, inv, tokenizer,
+		eventStores, qCoord, inv, tokenizer, hub,
 		config.AdmissionWorkerConfig{BatchSize: 10},
 		testhelpers.NewTestLogger(),
 	)
@@ -367,8 +370,9 @@ func TestAdmissionWorker_NoAdmissionWhenSoldOut(t *testing.T) {
 	seedWaitingCustomers(testCtx, t, event.ID, 5)
 
 	tokenizer := auth.NewTokenizer("test-secret-key-that-is-at-least-32-chars", 5*time.Minute)
+	hub := api.NewHub()
 	w := worker.NewAdmissionWorker(
-		eventStores, qCoord, inv, tokenizer,
+		eventStores, qCoord, inv, tokenizer, hub,
 		config.AdmissionWorkerConfig{BatchSize: 10},
 		testhelpers.NewTestLogger(),
 	)

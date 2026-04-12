@@ -12,6 +12,10 @@ import (
 	postgres "github.com/DanielPopoola/fairqueue/internal/store/postgres"
 )
 
+type Notifier interface {
+	NotifyAdmitted(ctx context.Context, customerID, token string, logger *slog.Logger) bool
+}
+
 // AdmissionWorker runs on every tick for each ACTIVE event:
 //  1. Evict admitted customers whose window has expired.
 //  2. Calculate how many to admit — capped at available inventory so we
@@ -23,6 +27,7 @@ type AdmissionWorker struct {
 	queue     *service.QueueCoordinator
 	inventory *service.InventoryCoordinator
 	tokenizer *auth.Tokenizer
+	notifier  Notifier
 	cfg       config.AdmissionWorkerConfig
 	logger    *slog.Logger
 }
@@ -32,6 +37,7 @@ func NewAdmissionWorker(
 	queue *service.QueueCoordinator,
 	inventory *service.InventoryCoordinator,
 	tokenizer *auth.Tokenizer,
+	notifier Notifier,
 	cfg config.AdmissionWorkerConfig,
 	logger *slog.Logger,
 ) *AdmissionWorker {
@@ -40,6 +46,7 @@ func NewAdmissionWorker(
 		queue:     queue,
 		inventory: inventory,
 		tokenizer: tokenizer,
+		notifier:  notifier,
 		cfg:       cfg,
 		logger:    logger,
 	}
@@ -119,8 +126,7 @@ func (w *AdmissionWorker) calculateBatchSize(ctx context.Context, event *domain.
 }
 
 // notifyAdmitted generates a signed admission token for each admitted
-// customer and sends it to them. The send is stubbed here — Phase 4
-// replaces the log line with a WebSocket push.
+// customer and sends it to them.
 func (w *AdmissionWorker) notifyAdmitted(ctx context.Context, eventID string, customerIDs []string) error {
 	for _, customerID := range customerIDs {
 		token, err := w.tokenizer.Generate(customerID, eventID)
@@ -133,14 +139,7 @@ func (w *AdmissionWorker) notifyAdmitted(ctx context.Context, eventID string, cu
 			continue // one bad token must not block others
 		}
 
-		// TODO(Phase 4): push token to customer via WebSocket.
-		// For now, log it so we can verify the worker is functioning
-		// in integration tests without a WebSocket layer.
-		w.logger.Info("admission token generated",
-			"customer_id", customerID,
-			"event_id", eventID,
-			"token", token,
-		)
+		w.notifier.NotifyAdmitted(ctx, customerID, token, w.logger)
 	}
 	return nil
 }

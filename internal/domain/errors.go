@@ -31,4 +31,8 @@ var (
 	ErrPaymentNotFound        = errors.New("payment not found")
 	ErrPaymentAlreadyMade     = errors.New("payment already exists")
 	ErrPaymentNotReconcilable = errors.New("payment is not in a reconcilable state")
+
+	// Sentinel errors
+	ErrInvalidInput = errors.New("invalid input")
+	ErrForbidden    = errors.New("forbidden")
 )

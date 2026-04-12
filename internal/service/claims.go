@@ -87,6 +87,47 @@ func (s *ClaimService) Claim(ctx context.Context, token, eventID string) (*Claim
 	return &ClaimResult{Claim: claim, EventID: eventID}, nil
 }
 
+// Release explicitly releases a claim before the TTL expires.
+// Restores the Redis inventory count so the next person in queue
+// can claim. Postgres is always written first.
+//
+// Ownership is enforced by the handler before calling this method —
+// the handler verifies claim.CustomerID == customerID from context.
+func (s *ClaimService) Release(ctx context.Context, claimID string) error {
+	claim, err := s.claims.GetByID(ctx, claimID)
+	if err != nil {
+		return err
+	}
+
+	if err := claim.Release(); err != nil {
+		return err // ErrClaimNotClaimable if already confirmed or released
+	}
+
+	if err := s.claims.UpdateStatus(
+		ctx,
+		claim.ID,
+		domain.ClaimStatusReleased,
+		domain.ClaimStatusClaimed,
+	); err != nil {
+		return fmt.Errorf("releasing claim: %w", err)
+	}
+
+	// Restore inventory — non-fatal, reconciliation heals any divergence.
+	if err := s.inventory.Increment(ctx, claim.EventID); err != nil {
+		s.logger.Warn("failed to restore inventory after explicit release",
+			"claim_id", claim.ID,
+			"event_id", claim.EventID,
+			"error", err,
+		)
+	}
+
+	s.logger.Info("claim released",
+		"claim_id", claim.ID,
+		"event_id", claim.EventID,
+	)
+	return nil
+}
+
 func (s *ClaimService) verifyToken(token, eventID string) (string, error) {
 	customerID, tokenEventID, err := s.tokenizer.Verify(token)
 	if err != nil {

@@ -1,229 +1,118 @@
 # FairQueue
 
-> **Fair ticketing for Nigerian live entertainment. Built for the moment 50,000 fans hit a website at once.**
-
-FairQueue is a SaaS ticketing platform built specifically for Nigerian concert and show promoters. It prevents websites from crashing under demand spikes, eliminates bot scalping, and ensures real fans get a fair shot at tickets — through an intelligent virtual queue system.
-
----
+A high-throughput inventory allocation system for high-demand live events in Nigeria. Handles the thundering herd problem — when 50,000 people try to buy 5,000 tickets at the same time — without overselling, without crashes, and without bots taking everything before real fans get a chance.
 
 ## The Problem
 
-Nigerian live entertainment has a specific, brutal problem: when a Wizkid or Burna Boy concert goes on sale, demand is not spread across days. It is compressed into seconds.
+When a high-demand event goes on sale:
 
-- 50,000 fans hit a ticketing site at exactly 10:00 AM
-- The site crashes within 2 minutes
-- When it recovers, bots have claimed 60% of inventory
-- Real fans are locked out
-- The promoter loses revenue to the secondary market and loses fan trust
+- Websites crash under the simultaneous load
+- Bots claim inventory in milliseconds
+- Payment failures silently lose claimed tickets
+- Users have no idea where they stand
 
-Existing platforms — Tix Africa, Paystack Tickets, Eventbrite — are not built for this load profile. They are built for trickle demand. FairQueue is built for the spike.
-
----
-
-## The Solution
-
-FairQueue puts a virtual queue in front of your ticket sale. Every fan who shows up gets a position. The system admits them at a controlled rate. Only admitted fans can attempt to purchase. The inventory layer uses atomic Redis operations so double-booking is structurally impossible.
-
-```
-Fan hits the sale page
-    ↓
-Joins queue → assigned position #4,821
-    ↓
-Real-time updates via WebSocket: #4,821 → #3,200 → #1,100 → #47
-    ↓
-Admitted: "It's your turn. You have 5 minutes."
-    ↓
-Selects ticket → completes Paystack payment
-    ↓
-Confirmation delivered
-```
-
-The promoter's site never sees 50,000 simultaneous requests. The queue absorbs the spike. The inventory layer handles the rest.
-
----
-
-## Who This Is For
-
-FairQueue is purpose-built for **Nigerian live entertainment**:
-
-- Afrobeats and Amapiano concert promoters
-- Comedy show organisers
-- Detty December event organisers
-- Any high-demand event where tickets sell out in minutes
-
-**Out of scope for MVP:** tech conferences, product drops, appointment booking, university hostel allocation. These do not face the demand concentration problem FairQueue is designed to solve. They are better served by simpler tools.
-
----
-
-## Architecture
-
-The architecture separates three distinct problems that existing platforms conflate:
-
-```
-┌─────────────────────────────────────────────┐
-│  Edge Layer (Cloudflare)                    │
-│  DDoS protection, rate limiting per IP      │
-└──────────────┬──────────────────────────────┘
-               ↓
-┌─────────────────────────────────────────────┐
-│  Queue Service (Redis ZSET)                 │
-│  Assigns positions, controls admission rate │
-│  WebSocket broadcasts live updates          │
-└──────────────┬──────────────────────────────┘
-               ↓
-┌─────────────────────────────────────────────┐
-│  Inventory Coordinator (Redis + Lua)        │
-│  Atomic claim/release, 10-minute expiry     │
-│  Structurally prevents double-booking       │
-└──────────────┬──────────────────────────────┘
-               ↓
-┌─────────────────────────────────────────────┐
-│  Payment Service (Paystack)                 │
-│  Webhook handling, idempotent operations    │
-│  Automatic inventory release on failure     │
-└──────────────┬──────────────────────────────┘
-               ↓
-┌─────────────────────────────────────────────┐
-│  PostgreSQL                                 │
-│  Permanent records, full audit trail        │
-└─────────────────────────────────────────────┘
-```
-
-**Key design decisions:**
-- Queue and inventory are separate systems — the queue handles the herd, Redis handles atomicity
-- Inventory uses a counter + Lua script, not individual item keys — fast, atomic, simple
-- On failure, the system fails inflated (detectable) not deflated (silent) — by design
-- Optimistic locking (`UPDATE WHERE status = CLAIMED`) prevents concurrent release races
-
-**Tech stack:**
-
-| Layer | Technology |
-|-------|-----------|
-| API | Python 3.12 + FastAPI |
-| Queue & coordination | Redis 7+ with Lua scripting |
-| Database | PostgreSQL 15+ |
-| Payments | Paystack |
-| Real-time | WebSockets (FastAPI native) |
-| Deployment | Docker Compose |
-| Monitoring | Prometheus + Grafana |
-
----
+FairQueue solves this with a virtual queue that absorbs the spike, admits customers at a controlled rate, and guarantees atomic inventory allocation backed by real distributed systems correctness.
 
 ## Quick Start
 
-**Prerequisites:** Docker and Docker Compose.
-
 ```bash
-# Clone the repository
-git clone https://github.com/DanielPopoola/fairqueue.git
-cd fairqueue/backend
-
-# Set up environment variables
-cp .env.example .env
-# Add your Paystack secret key and database credentials to .env
-
-# Start all services
-docker-compose up -d
-
-# Run database migrations
-docker-compose exec api alembic upgrade head
-
-# Verify everything is running
-curl http://localhost:8000/info
+git clone https://github.com/DanielPopoola/fairqueue
+cd fairqueue
+cp .env.example .env          # fill in Paystack keys; defaults work for local dev
+docker compose up --build
 ```
 
-**Create your first event:**
+The API is live at `http://localhost:8080`.
+Swagger UI is at `http://localhost:8080/swagger/index.html`.
 
-```bash
-curl -X POST http://localhost:8000/events \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Wizkid Live in Lagos",
-    "organizer_id": 1,
-    "total_inventory": 5000,
-    "price_per_item": 25000,
-    "sale_start": "2024-06-01T10:00:00Z",
-    "sale_end": "2024-06-01T23:59:00Z",
-    "allocation_strategy": "fifo"
-  }'
+## How It Works
+
+```
+50,000 users hit the sale at 10:00:00 AM
+         │
+         ▼
+  Virtual Queue (Redis ZSET)
+  Assigns position instantly — cheap O(log N) operation
+         │
+         ▼ (admission worker, every 5s)
+  Admitted in batches sized to available inventory
+  Each admitted user receives a short-lived signed token
+         │
+         ▼
+  Claim (atomic Redis Lua script + Postgres)
+  Token verified → inventory decremented → claim created
+         │
+         ▼
+  Payment (Paystack)
+  Outbox record written before gateway call
+  Webhook confirms → claim confirmed
+  Failure → claim released → inventory restored
 ```
 
----
+The queue absorbs the thundering herd. Only admitted users reach the claim layer. Only claimed users reach the payment layer. Each transition is a rate-limiting gate.
 
-## API Reference
+## Key Design Decisions
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/events` | Create a new event |
-| `POST` | `/claims` | Claim a ticket for an event |
-| `POST` | `/queue/join` | Join the queue for an event |
-| `GET` | `/queue/position` | Get current queue position |
+**PostgreSQL is the source of truth.** Redis holds no state that cannot be reconstructed from Postgres. If Redis is wiped, the reconciliation worker heals inventory counts and the recovery function rebuilds the queue ZSETs from Postgres on the next startup. See [TRADEOFFS.md](./TRADEOFFS.md) for the full reasoning.
 
-Full API docs available at `http://localhost:8000/docs` when running locally.
+**Two-layer concurrency shield.** A Redis `SET NX` lock prevents concurrent claim attempts from reaching the database simultaneously. A Postgres unique constraint on `(event_id, customer_id)` is the inviolable last line of defence. The lock is a performance optimisation; the constraint is the correctness guarantee.
 
----
+**Outbox pattern for payment safety.** A `Payment` row is written in `INITIALIZING` state before the Paystack API is called. A crash between the write and the gateway call leaves a recoverable record. The reconciliation worker finds stale `INITIALIZING` records and retries the gateway call.
 
-## Development
+**100 goroutines, 1 ticket, exactly 1 claim.** The concurrency guarantee is a tested invariant, not just a design intent. See `internal/service/claims_test.go`.
 
-```bash
-# Install dependencies
-pip install uv
-uv pip install --system -e .
+## Architecture
 
-# Run tests
-pytest
+See [ARCHITECTURE.md](./ARCHITECTURE.md) for component diagrams and flow diagrams.
 
-# Run with hot reload
-uvicorn main:app --reload
+## Project Structure
+
+```
+cmd/api/          Entry point, dependency wiring
+internal/
+  domain/         State machines and business rules (no infrastructure)
+  service/        Business logic orchestration
+  store/
+    postgres/     PostgreSQL store implementations
+    redis/        Redis store implementations
+  worker/         Background workers (admission, expiry, reconciliation)
+  api/            HTTP handlers, middleware, WebSocket hub
+  gateway/        Paystack payment gateway
+  auth/           JWT tokenizers, argon2id password hashing
+  config/         Environment-based configuration
+  infra/
+    migrate/      Embedded SQL migrations
+    retry/        Generic retry with exponential backoff
 ```
 
-**Running tests against real infrastructure (recommended):**
-
-Tests use `testcontainers` to spin up real Redis and PostgreSQL instances. No mocks for infrastructure — the tests prove actual behaviour under concurrency.
+## Testing
 
 ```bash
-# Full test suite including race condition tests
-pytest tests/ -v
+# Unit tests — domain logic, no infrastructure
+make test-unit
+
+# Integration tests — real Postgres + Redis via testcontainers
+make test-integration
+
+# All tests
+make test
 ```
 
----
+Integration tests run against real infrastructure using testcontainers. No mocks except the Paystack gateway — because mocking the database tells you nothing about whether the unique constraint fires.
 
-## Roadmap
+The test suite caught two production bugs during development:
 
-### MVP (current)
-- [x] Redis-based atomic inventory with Lua scripts
-- [x] FIFO queue service
-- [x] Claim expiry background worker
-- [x] Event activation worker
-- [x] Paystack payment integration
-- [ ] WebSocket live queue position updates
-- [ ] Promoter dashboard
+- `MarkFailed` silently no-oping because the payment was still `INITIALIZING` not `PENDING` when a permanent gateway error occurred
+- Missing unique index on `payments(claim_id)` allowing duplicate gateway calls under concurrency
 
-### Phase 2
-- [ ] Ticket tiers with separate inventory pools (VIP, Regular, Early Bird)
-- [ ] Waitlist management — auto-assign released inventory
-- [ ] Abandoned cart recovery
-- [ ] SMS notifications via Termii
+## Stack
 
-### Future
-- [ ] Named tickets tied to buyer ID (anti-scalping)
-- [ ] QR code generation and gate scanning
-- [ ] Bot detection
-
----
-
-## Why Not Just Use Eventbrite / Tix Africa?
-
-They crash. Under the demand profile of a Nigerian concert sale — tens of thousands of fans at the same second — standard ticketing platforms are not architected to survive. FairQueue's queue layer exists precisely to absorb that spike before it reaches the database.
-
-Additionally: FairQueue charges 3% per transaction. Most alternatives charge 5–10%.
-
----
-
-## License
-
-MIT — see [LICENSE](LICENSE) for details.
-
----
-
-**Built in Lagos, Nigeria 🇳🇬**
+| Layer | Technology |
+|---|---|
+| Language | Go |
+| Database | PostgreSQL 16 |
+| Cache / Queue | Redis 7 |
+| Payment | Paystack |
+| Container | Docker + Compose |
+| HTTP | chi |
+| WebSocket | coder/websocket |
