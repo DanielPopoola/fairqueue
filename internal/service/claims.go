@@ -128,6 +128,10 @@ func (s *ClaimService) Release(ctx context.Context, claimID string) error {
 	return nil
 }
 
+func (s *ClaimService) VerifyAdmissionToken(token string) (customerID, eventID string, err error) {
+	return s.tokenizer.Verify(token)
+}
+
 func (s *ClaimService) verifyToken(token, eventID string) (string, error) {
 	customerID, tokenEventID, err := s.tokenizer.Verify(token)
 	if err != nil {

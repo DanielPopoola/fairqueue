@@ -35,6 +35,7 @@ func TestFlow_HappyPath(t *testing.T) {
 		"email":    email,
 		"password": password,
 	})
+	defer resp.Body.Close()
 	assertStatus(t, resp, http.StatusOK)
 
 	type authResp struct {
@@ -56,6 +57,7 @@ func TestFlow_HappyPath(t *testing.T) {
 		"sale_start":      time.Now().Add(-time.Hour).Format(time.RFC3339),
 		"sale_end":        time.Now().Add(24 * time.Hour).Format(time.RFC3339),
 	})
+	defer resp.Body.Close()
 	assertStatus(t, resp, http.StatusCreated)
 
 	type eventResp struct {
@@ -73,6 +75,7 @@ func TestFlow_HappyPath(t *testing.T) {
 
 	// ── Step 3: Activate event ────────────────────────────────
 	resp = orgClient.PUT(t, "/events/"+eventID+"/activate")
+	defer resp.Body.Close()
 	assertStatus(t, resp, http.StatusOK)
 
 	activated := decodeBody[eventResp](t, resp)
@@ -85,6 +88,7 @@ func TestFlow_HappyPath(t *testing.T) {
 	resp = client.POST(t, "/auth/customer/otp/request", map[string]any{
 		"email": custEmail,
 	})
+	defer resp.Body.Close()
 	assertStatus(t, resp, http.StatusOK)
 
 	// Retrieve OTP directly from Redis (bypasses email in tests)
@@ -99,6 +103,7 @@ func TestFlow_HappyPath(t *testing.T) {
 		"email": custEmail,
 		"otp":   otp,
 	})
+	defer resp.Body.Close()
 	assertStatus(t, resp, http.StatusOK)
 
 	type custAuthResp struct {
@@ -110,6 +115,7 @@ func TestFlow_HappyPath(t *testing.T) {
 
 	// ── Step 6: Customer joins queue ─────────────────────────
 	resp = custClient.POST(t, "/events/"+eventID+"/queue", nil)
+	defer resp.Body.Close()
 	assertStatus(t, resp, http.StatusCreated)
 
 	type queueJoinResp struct {
@@ -137,6 +143,7 @@ func TestFlow_HappyPath(t *testing.T) {
 
 	// ── Step 8: Customer polls position — expects ADMITTED ────
 	resp = custClient.GET(t, "/events/"+eventID+"/queue/position")
+	defer resp.Body.Close()
 	assertStatus(t, resp, http.StatusOK)
 
 	type positionResp struct {
@@ -157,6 +164,7 @@ func TestFlow_HappyPath(t *testing.T) {
 	resp = custClient.POST(t, "/events/"+eventID+"/claims", map[string]any{
 		"admission_token": admissionToken,
 	})
+	defer resp.Body.Close()
 	assertStatus(t, resp, http.StatusCreated)
 
 	type claimResp struct {
@@ -177,6 +185,7 @@ func TestFlow_HappyPath(t *testing.T) {
 		}, nil).Once()
 
 	resp = custClient.POST(t, "/claims/"+claimID+"/payments", nil)
+	defer resp.Body.Close()
 	assertStatus(t, resp, http.StatusCreated)
 
 	type paymentResp struct {
@@ -380,6 +389,7 @@ func TestFlow_FailedPayment_ReleasesClaimAndRestoresInventory(t *testing.T) {
 	resp = custClient.POST(t, "/events/"+eventID+"/claims", map[string]any{
 		"admission_token": admToken,
 	})
+	defer resp.Body.Close()
 	assertStatus(t, resp, http.StatusCreated)
 
 	type claimResp struct {
@@ -402,6 +412,7 @@ func TestFlow_FailedPayment_ReleasesClaimAndRestoresInventory(t *testing.T) {
 		}, nil).Once()
 
 	resp = custClient.POST(t, "/claims/"+claimID+"/payments", nil)
+	defer resp.Body.Close()
 	assertStatus(t, resp, http.StatusCreated)
 
 	type payResp struct {
@@ -533,6 +544,7 @@ func TestFlow_Queue_JoinInactiveEvent(t *testing.T) {
 		"sale_end":        time.Now().Add(24 * time.Hour).Format(time.RFC3339),
 	})
 	assertStatus(t, resp, http.StatusCreated)
+	defer resp.Body.Close()
 
 	type evResp struct {
 		Data struct {
@@ -602,6 +614,7 @@ func mustLoginOrganizer(t *testing.T, client *testClient, pool *pgxpool.Pool) *t
 		"email":    email,
 		"password": password,
 	})
+	defer resp.Body.Close()
 	assertStatus(t, resp, http.StatusOK)
 	type r struct {
 		Token string `json:"token"`
@@ -627,6 +640,7 @@ func mustCustomerAuth(t *testing.T, client *testClient, rdb *redis.Client) strin
 		"email": email,
 		"otp":   otp,
 	})
+	defer resp.Body.Close()
 	assertStatus(t, resp, http.StatusOK)
 	type r struct {
 		Token string `json:"token"`
@@ -645,6 +659,7 @@ func mustCreateAndActivateEvent(t *testing.T, orgClient *testClient, inventory i
 		"sale_start":      time.Now().Add(-time.Hour).Format(time.RFC3339),
 		"sale_end":        time.Now().Add(24 * time.Hour).Format(time.RFC3339),
 	})
+	defer resp.Body.Close()
 	assertStatus(t, resp, http.StatusCreated)
 	type r struct {
 		Data struct {
@@ -664,6 +679,7 @@ func mustCreateAndActivateEvent(t *testing.T, orgClient *testClient, inventory i
 func mustGetAdmissionToken(t *testing.T, custClient *testClient, eventID string) string {
 	t.Helper()
 	resp := custClient.GET(t, "/events/"+eventID+"/queue/position")
+	defer resp.Body.Close()
 	assertStatus(t, resp, http.StatusOK)
 	type r struct {
 		Status         string  `json:"status"`

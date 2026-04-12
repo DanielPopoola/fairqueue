@@ -64,6 +64,14 @@ linters:
           - gosec
           - govet
           - staticcheck
+
+      - path: 'e2e/'
+        linters:
+          - errcheck
+          - gocritic
+          - gosec
+          - govet
+          - staticcheck
       
       # Exclude linting for generated or temporary files
       - path: '(^|/)tmp/'
