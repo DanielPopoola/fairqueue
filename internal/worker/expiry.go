@@ -8,6 +8,7 @@ import (
 
 	"github.com/DanielPopoola/fairqueue/internal/config"
 	"github.com/DanielPopoola/fairqueue/internal/domain"
+	"github.com/DanielPopoola/fairqueue/internal/metrics"
 	"github.com/DanielPopoola/fairqueue/internal/service"
 	postgres "github.com/DanielPopoola/fairqueue/internal/store/postgres"
 )
@@ -89,6 +90,7 @@ func (w *ExpiryWorker) releaseClaim(ctx context.Context, claim *domain.Claim) er
 		return fmt.Errorf("releasing claim: %w", err)
 	}
 
+	metrics.ClaimsExpiredTotal.WithLabelValues(claim.EventID).Inc()
 	// Postgres committed — now restore inventory in Redis.
 	// Non-fatal: reconciliation worker heals any divergence.
 	if err := w.inventory.Increment(ctx, claim.EventID); err != nil {

@@ -23,6 +23,7 @@ import (
 	"github.com/DanielPopoola/fairqueue/internal/auth"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	httpSwagger "github.com/swaggo/http-swagger"
 )
 
@@ -37,6 +38,10 @@ func NewRouter(
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
+	r.Use(middleware.RequestID)
+	r.Use(middleware.RealIP)
+	r.Use(middleware.Recoverer)
+	r.Use(MetricsMiddleware)
 
 	// Swagger UI — served at /swagger/index.html
 	r.Get("/swagger/*", httpSwagger.Handler(
@@ -50,6 +55,7 @@ func NewRouter(
 	r.Post("/auth/customer/otp/verify", h.VerifyOTP)
 	r.Get("/events/{eventId}", h.GetEvent)
 	r.Post("/webhooks/paystack", h.PaystackWebhook)
+	r.Handle("/metrics", promhttp.Handler())
 
 	// ── Organizer-protected routes ────────────────────────────
 	r.Group(func(r chi.Router) {

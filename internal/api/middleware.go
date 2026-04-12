@@ -6,11 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/DanielPopoola/fairqueue/internal/auth"
+	"github.com/DanielPopoola/fairqueue/internal/metrics"
 	redisstore "github.com/DanielPopoola/fairqueue/internal/store/redis"
+	"github.com/go-chi/chi/v5"
 )
 
 const otpTTL = 10 * time.Minute
@@ -106,4 +109,35 @@ func generateOTP() (string, error) {
 	}
 	n := (int(b[0])<<16 | int(b[1])<<8 | int(b[2])) % 1_000_000
 	return fmt.Sprintf("%06d", n), nil
+}
+
+func MetricsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+
+		// Wrap ResponseWriter to capture status code
+		wrapped := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(wrapped, r)
+
+		duration := time.Since(start).Seconds()
+		status := strconv.Itoa(wrapped.status)
+
+		routePattern := chi.RouteContext(r.Context()).RoutePattern()
+		if routePattern == "" {
+			routePattern = r.URL.Path
+		}
+
+		metrics.HTTPRequestsTotal.WithLabelValues(r.Method, routePattern, status).Inc()
+		metrics.HTTPRequestDuration.WithLabelValues(r.Method, routePattern).Observe(duration)
+	})
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *statusRecorder) WriteHeader(status int) {
+	r.status = status
+	r.ResponseWriter.WriteHeader(status)
 }
