@@ -3,6 +3,8 @@ name: CI/CD
 on:
   push:
     branches: [master]
+  pull_request:
+    branches: [master]
 
 env:
   REGISTRY: ghcr.io
@@ -78,10 +80,12 @@ jobs:
             cd ~/fairqueue
 
             # Write the env file from the secret
-            echo "${{ secrets.ENV_FILE }}" > .env
+            cat > .env << 'EOF'
+            ${{ secrets.ENV_FILE }}
+            EOF
 
             # Pull the latest image
             docker compose pull app
 
-            # Restart with zero downtime
+            # Attempt zero-downtime restart; may cause brief interruption on single replica
             docker compose up -d --no-deps app
