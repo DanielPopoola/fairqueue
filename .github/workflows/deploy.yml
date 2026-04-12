@@ -80,11 +80,6 @@ jobs:
           script: |
             cd ~/fairqueue
 
-            # Write the env file from the secret
-            cat > .env << 'EOF'
-            ${{ secrets.ENV_FILE }}
-            EOF
-
             # Pull the latest image
             docker compose pull app
 
