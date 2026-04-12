@@ -1,0 +1,150 @@
+name: Load Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: 'Which scenario to run'
+        required: true
+        type: choice
+        options:
+          - thundering_herd
+          - sustained_load
+          - correctness_check
+      event_id:
+        description: 'Event ID for correctness check (scenario 3 only)'
+        required: false
+
+jobs:
+  deploy-loadtest-server:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Start load test server on VPS
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          fingerprint: ${{ secrets.VPS_SSH_FINGERPRINT }}
+          script: |
+            mkdir -p ~/fairqueue-loadtest
+            cd ~/fairqueue-loadtest
+
+            # Write the env file
+            echo "${{ secrets.LOADTEST_ENV_FILE }}" > .env
+
+            # Write the compose file inline so we don't need to clone the repo
+            cat > docker-compose.loadtest.yml << 'EOF'
+            services:
+              loadtest-app:
+                image: ghcr.io/danielpopoola/fairqueue-loadtest:latest
+                ports:
+                  - "8082:8082"
+                env_file:
+                  - .env
+                environment:
+                  DATABASE__HOST: loadtest-postgres
+                  REDIS__HOST: loadtest-redis
+                depends_on:
+                  loadtest-postgres:
+                    condition: service_healthy
+                  loadtest-redis:
+                    condition: service_healthy
+                restart: unless-stopped
+
+              loadtest-postgres:
+                image: postgres:16-alpine
+                environment:
+                  POSTGRES_USER: fairqueue
+                  POSTGRES_PASSWORD: fairqueue
+                  POSTGRES_DB: fairqueue_loadtest
+                volumes:
+                  - loadtest_postgres_data:/var/lib/postgresql/data
+                healthcheck:
+                  test: ["CMD-SHELL", "pg_isready -U fairqueue -d fairqueue_loadtest"]
+                  interval: 5s
+                  timeout: 5s
+                  retries: 5
+
+              loadtest-redis:
+                image: redis:7-alpine
+                volumes:
+                  - loadtest_redis_data:/data
+                healthcheck:
+                  test: ["CMD", "redis-cli", "ping"]
+                  interval: 5s
+                  timeout: 5s
+                  retries: 5
+
+            volumes:
+              loadtest_postgres_data:
+              loadtest_redis_data:
+            EOF
+
+            # Pull latest image and start
+            docker compose -f docker-compose.loadtest.yml pull
+            docker compose -f docker-compose.loadtest.yml up -d
+
+            # Wait for server to be ready
+            echo "Waiting for load test server..."
+            for i in $(seq 1 30); do
+              if curl -sf http://localhost:8082/health > /dev/null; then
+                echo "Server ready"
+                break
+              fi
+              sleep 2
+            done
+
+            # Seed the organizer
+            curl -sf -X POST http://localhost:8082/loadtest/seed
+
+  run-loadtest:
+    needs: deploy-loadtest-server
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install k6
+        run: |
+          sudo gpg --no-default-keyring \
+            --keyring /usr/share/keyrings/k6-archive-keyring.gpg \
+            --keyserver hkp://keyserver.ubuntu.com:80 \
+            --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] \
+            https://dl.k6.io/deb stable main" \
+            | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install k6
+
+      - name: Run load test scenario
+        run: |
+          SCRIPT="loadtest/scripts/01_thundering_herd.js"
+
+          if [ "${{ inputs.scenario }}" = "sustained_load" ]; then
+            SCRIPT="loadtest/scripts/02_sustained_load.js"
+          elif [ "${{ inputs.scenario }}" = "correctness_check" ]; then
+            SCRIPT="loadtest/scripts/03_correctness_check.js"
+          fi
+
+          k6 run \
+            -e BASE_URL=https://loadtest-api.tulcanvcm.com \
+            -e ORGANIZER_EMAIL=loadtest@admin.com \
+            -e ORGANIZER_PASSWORD=loadtest-password \
+            -e EVENT_ID=${{ inputs.event_id }} \
+            $SCRIPT
+
+  teardown-loadtest-server:
+    needs: run-loadtest
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Stop and clean up load test server
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          fingerprint: ${{ secrets.VPS_SSH_FINGERPRINT }}
+          script: |
+            cd ~/fairqueue-loadtest
+            docker compose -f docker-compose.loadtest.yml down -v

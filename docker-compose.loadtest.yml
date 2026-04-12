@@ -6,8 +6,8 @@ services:
       dockerfile: Dockerfile.loadtest
     ports:
       - "8082:8082"
-    env_file:
-      - .env.loadtest
+    env_file: 
+      - .env
     environment:
       SERVER__PORT: ${LOADTEST_SERVER_PORT:-8082}
       DATABASE__HOST: loadtest-postgres
