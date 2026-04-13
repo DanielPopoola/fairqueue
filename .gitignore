@@ -27,4 +27,7 @@ go.work.sum
 
 # Air (hot reload)
 tmp/
-build-errors.log    
+build-errors.log
+
+
+loadtest/scripts/tokens.json
