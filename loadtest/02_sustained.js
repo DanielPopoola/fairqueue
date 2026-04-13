@@ -1,8 +1,8 @@
 import http from 'k6/http';
 import { sleep } from 'k6';
-import { BASE_URL, DEFAULT_HEADERS } from './lib/config.js';
-import { setupEvent } from './lib/setup.js';
-import { getToken } from './lib/tokens.js';
+import { BASE_URL, DEFAULT_HEADERS } from './scripts/lib/config.js';
+import { setupEvent } from './scripts/lib/setup.js';
+import { getToken } from './scripts/lib/tokens.js';
 
 export const options = {
   stages: [
