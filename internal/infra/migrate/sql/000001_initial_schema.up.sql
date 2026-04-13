@@ -4,6 +4,8 @@
 -- ORGANIZERS
 -- ============================================================
 CREATE EXTENSION IF NOT EXISTS citext;
+CREATE EXTENSION pg_stat_statements;
+
 CREATE TABLE IF NOT EXISTS organizers (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name          VARCHAR(255) NOT NULL,
