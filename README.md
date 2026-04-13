@@ -1,109 +1,93 @@
 # FairQueue
 
-A high-throughput inventory allocation system for high-demand live events in Nigeria. Handles the thundering herd problem — when 50,000 people try to buy 5,000 tickets at the same time — without overselling, without crashes, and without bots taking everything before real fans get a chance.
+A virtual queue and inventory allocation system for high-demand live events in Nigeria. Built to handle the moment 50,000 people try to buy 5,000 tickets at exactly the same time — without overselling, without crashes, and without bots.
 
 ## The Problem
 
-When a high-demand event goes on sale:
+When a high-demand event goes on sale, three things happen simultaneously:
 
-- Websites crash under the simultaneous load
-- Bots claim inventory in milliseconds
-- Payment failures silently lose claimed tickets
-- Users have no idea where they stand
+- The website crashes under the sudden spike in traffic
+- Bots grab the inventory in milliseconds before real fans get a chance
+- Payment failures silently lose tickets that were already claimed
 
-FairQueue solves this with a virtual queue that absorbs the spike, admits customers at a controlled rate, and guarantees atomic inventory allocation backed by real distributed systems correctness.
+FairQueue solves all three. It absorbs the traffic spike into a virtual queue, admits customers at a controlled rate, and guarantees that inventory allocation is atomic — two people can never get the same ticket.
 
 ## Quick Start
 
 ```bash
 git clone https://github.com/DanielPopoola/fairqueue
 cd fairqueue
-cp .env.example .env          # fill in Paystack keys; defaults work for local dev
+cp .env.example .env    # fill in your Paystack keys; everything else works out of the box
 docker compose up --build
 ```
 
-The API is live at `http://localhost:8080`.
-Swagger UI is at `http://localhost:8080/swagger/index.html`.
+API is available at `http://localhost:8080`. Swagger UI is at `http://localhost:8080/swagger/index.html`.
 
 ## How It Works
 
-```
-50,000 users hit the sale at 10:00:00 AM
-         │
-         ▼
-  Virtual Queue (Redis ZSET)
-  Assigns position instantly — cheap O(log N) operation
-         │
-         ▼ (admission worker, every 5s)
-  Admitted in batches sized to available inventory
-  Each admitted user receives a short-lived signed token
-         │
-         ▼
-  Claim (atomic Redis Lua script + Postgres)
-  Token verified → inventory decremented → claim created
-         │
-         ▼
-  Payment (Paystack)
-  Outbox record written before gateway call
-  Webhook confirms → claim confirmed
-  Failure → claim released → inventory restored
-```
+A customer's journey through the system has four stages:
 
-The queue absorbs the thundering herd. Only admitted users reach the claim layer. Only claimed users reach the payment layer. Each transition is a rate-limiting gate.
+**1. Queue** — When the sale opens, everyone hits `POST /events/{id}/queue` at once. This is a cheap Redis write (O(log N)), so it absorbs any traffic volume without touching the database. Each customer gets a queue position.
+
+**2. Admission** — A background worker runs every 5 seconds. It pops the next batch of customers from the waiting queue, moves them to the admitted set, and pushes them a signed admission token via WebSocket. Customers who miss the push can poll `GET /events/{id}/queue/position` to retrieve their token.
+
+**3. Claim** — An admitted customer presents their token to `POST /events/{id}/claims`. The system atomically checks and decrements the Redis inventory counter. If that succeeds, it inserts a claim row in Postgres. A unique constraint on `(event_id, customer_id)` is the last line of defence against any race condition.
+
+**4. Payment** — The customer calls `POST /claims/{id}/payments`, which writes a payment record to Postgres *before* calling Paystack. This means a crash can never produce a charge with no record. The reconciliation worker finds and heals any payments stuck in intermediate states.
 
 ## Key Design Decisions
 
-**PostgreSQL is the source of truth.** Redis holds no state that cannot be reconstructed from Postgres. If Redis is wiped, the reconciliation worker heals inventory counts and the recovery function rebuilds the queue ZSETs from Postgres on the next startup. See [TRADEOFFS.md](./TRADEOFFS.md) for the full reasoning.
+**PostgreSQL is the only source of truth.** Redis holds nothing that cannot be reconstructed from Postgres. If Redis is wiped, the startup recovery function rebuilds the queue and the reconciliation worker heals the inventory count. Redis makes things fast; Postgres makes things correct.
 
-**Two-layer concurrency shield.** A Redis `SET NX` lock prevents concurrent claim attempts from reaching the database simultaneously. A Postgres unique constraint on `(event_id, customer_id)` is the inviolable last line of defence. The lock is a performance optimisation; the constraint is the correctness guarantee.
+**Two-layer concurrency shield.** A Redis `SET NX` lock stops concurrent claim attempts before they reach the database. A Postgres unique constraint on `(event_id, customer_id)` is the inviolable correctness guarantee that holds even if the lock is unavailable. Both layers must fail for an oversell to occur.
 
-**Outbox pattern for payment safety.** A `Payment` row is written in `INITIALIZING` state before the Paystack API is called. A crash between the write and the gateway call leaves a recoverable record. The reconciliation worker finds stale `INITIALIZING` records and retries the gateway call.
+**Outbox pattern for payment safety.** A `Payment` row is always written in `INITIALIZING` state before the Paystack API is called. A crash at any point leaves a recoverable record. The reconciliation worker finds stale `INITIALIZING` records and retries the gateway call.
 
-**100 goroutines, 1 ticket, exactly 1 claim.** The concurrency guarantee is a tested invariant, not just a design intent. See `internal/service/claims_test.go`.
+**Postgres-first writes.** The Redis inventory counter is only decremented *after* the Postgres insert commits. If the server crashes between the commit and the Redis write, Redis shows more tickets than exist — the reconciliation worker heals this within 30 seconds. The alternative (Redis first) risks permanently locking out valid users. Temporary inflation is the only acceptable failure mode.
+
+For the full reasoning behind every decision, see [TRADEOFFS.md](./TRADEOFFS.md).
 
 ## Architecture
 
-See [ARCHITECTURE.md](./ARCHITECTURE.md) for component diagrams and flow diagrams.
+See [ARCHITECTURE.md](./ARCHITECTURE.md) for a component diagram showing how all the pieces fit together.
 
 ## Project Structure
 
 ```
-cmd/api/          Entry point, dependency wiring
+cmd/api/            Entry point and dependency wiring
 internal/
-  domain/         State machines and business rules (no infrastructure)
-  service/        Business logic orchestration
+  domain/           State machines and domain errors — no infrastructure dependencies
+  service/          Business logic: claims, queue, payments, events
   store/
-    postgres/     PostgreSQL store implementations
-    redis/        Redis store implementations
-  worker/         Background workers (admission, expiry, reconciliation)
-  api/            HTTP handlers, middleware, WebSocket hub
-  gateway/        Paystack payment gateway
-  auth/           JWT tokenizers, argon2id password hashing
-  config/         Environment-based configuration
+    postgres/       PostgreSQL store implementations
+    redis/          Redis store implementations (inventory, queue, lock)
+  worker/           Background workers: admission, expiry, reconciliation, recovery
+  api/              HTTP handlers, middleware, WebSocket hub
+  gateway/paystack/ Paystack payment gateway adapter
+  auth/             JWT tokenizers (organizer + customer), argon2id password hashing
+  config/           Environment-based configuration loading and validation
   infra/
-    migrate/      Embedded SQL migrations
-    retry/        Generic retry with exponential backoff
+    migrate/        Embedded SQL migrations
+    retry/          Generic retry with exponential backoff
 ```
 
-## Testing
+## Running Tests
 
 ```bash
-# Unit tests — domain logic, no infrastructure
+# Domain logic only — fast, no infrastructure required
 make test-unit
 
-# Integration tests — real Postgres + Redis via testcontainers
+# Service and worker tests — spins up real Postgres and Redis via testcontainers
 make test-integration
 
-# All tests
+# Full end-to-end flow tests
+make test-e2e
+
+# Everything
 make test
 ```
 
-Integration tests run against real infrastructure using testcontainers. No mocks except the Paystack gateway — because mocking the database tells you nothing about whether the unique constraint fires.
-
-The test suite caught two production bugs during development:
-
-- `MarkFailed` silently no-oping because the payment was still `INITIALIZING` not `PENDING` when a permanent gateway error occurred
-- Missing unique index on `payments(claim_id)` allowing duplicate gateway calls under concurrency
+Integration tests run against real infrastructure. The only mock in the codebase is the Paystack gateway — because mocking the database tells you nothing about whether the unique constraint fires.
 
 ## Stack
 
@@ -113,6 +97,6 @@ The test suite caught two production bugs during development:
 | Database | PostgreSQL 16 |
 | Cache / Queue | Redis 7 |
 | Payment | Paystack |
-| Container | Docker + Compose |
-| HTTP | chi |
+| HTTP router | Chi |
 | WebSocket | coder/websocket |
+| Container | Docker + Compose |
