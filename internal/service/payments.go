@@ -234,7 +234,6 @@ func (s *PaymentService) failureFlow(ctx context.Context, p *domain.Payment, rea
 	return err
 }
 
-// failureFlow atomically marks a payment failed and releases the related claim.
 func (s *PaymentService) fetchInitData(ctx context.Context, claimID, custID string) (*domain.Claim, *domain.Customer, *domain.Event, error) {
 	claim, err := s.claims.GetByID(ctx, claimID)
 	if err != nil {
@@ -268,7 +267,6 @@ func (s *PaymentService) validateClaimForPayment(c *domain.Claim, customerID str
 	return nil
 }
 
-// validateClaimForPayment enforces claim ownership, freshness, and status checks.
 func (s *PaymentService) handleGatewayInitError(ctx context.Context, p *domain.Payment, err error, log *slog.Logger) error {
 	if errors.Is(err, paystack.ErrPermanent) {
 		if ferr := s.failureFlow(ctx, p, err.Error(), domain.PaymentStatusInitializing); ferr != nil {

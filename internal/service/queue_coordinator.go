@@ -45,8 +45,6 @@ func (c *QueueCoordinator) Join(ctx context.Context, entry *domain.QueueEntry) e
 
 	// Redis second — fast position tracking
 	if err := c.redisQueue.Join(ctx, entry.EventID, entry.CustomerID, joinedAt); err != nil {
-		// Non-fatal — position tracking is best effort.
-		// Customer is in the queue per Postgres.
 		c.logger.Warn("failed to add customer to redis queue",
 			"customer_id", entry.CustomerID,
 			"event_id", entry.EventID,

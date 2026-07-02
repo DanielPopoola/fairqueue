@@ -102,8 +102,6 @@ func (s *QueueService) GetAdmittedEntry(ctx context.Context, customerID, eventID
 }
 
 // Abandon removes a customer from the waiting queue.
-// Only WAITING entries can be abandoned — ADMITTED entries
-// can only move to EXPIRED via the eviction worker.
 func (s *QueueService) Abandon(ctx context.Context, customerID, eventID string) error {
 	entry, err := s.queue.pgQueue.GetByCustomerAndEvent(ctx, customerID, eventID)
 	if err != nil {
